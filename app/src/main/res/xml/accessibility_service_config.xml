@@ -5,4 +5,5 @@
     android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows"
     android:canRetrieveWindowContent="true"
     android:notificationTimeout="300"
+    android:packageNames="com.android.chrome,com.whatsapp,org.telegram.messenger,com.facebook.orca,com.instagram.android,com.android.mms"
     android:description="@string/app_subtitle" />
