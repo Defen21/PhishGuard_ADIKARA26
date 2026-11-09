@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.content.pm.Signature
 import android.os.Build
 import android.util.Log
+import com.example.ai_project_singapore.BuildConfig
 import java.security.MessageDigest
 
 /**
@@ -73,6 +74,12 @@ class AppIntegrityChecker(private val context: Context) {
      */
     private fun verifySignature(): Boolean {
         return try {
+            // Di debug build, skip signature check agar development tidak terhambat
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "Debug build — signature check skipped")
+                return true
+            }
+
             val signatures = getSignatures()
             if (signatures.isNullOrEmpty()) {
                 Log.w(TAG, "No signatures found")
@@ -82,12 +89,9 @@ class AppIntegrityChecker(private val context: Context) {
             val currentHash = getSignatureHash(signatures[0])
             Log.d(TAG, "Current signature hash: $currentHash")
 
-            // TODO: Set this to your actual release key SHA-256 hash
-            // For development, we return true to allow debug builds
-            // In production, uncomment the line below and set your hash:
-            // return currentHash == EXPECTED_SIGNATURE_HASH
-
-            true // Allow during development
+            // Bandingkan dengan hash release key yang sebenarnya
+            // TODO: Ganti EXPECTED_SIGNATURE_HASH dengan hash SHA-256 dari release keystore
+            currentHash == EXPECTED_SIGNATURE_HASH
         } catch (e: Exception) {
             Log.e(TAG, "Signature verification error", e)
             false
@@ -98,6 +102,12 @@ class AppIntegrityChecker(private val context: Context) {
      * Layer 2: Detect if app is running in debug mode.
      */
     private fun isDebuggable(): Boolean {
+        // Di debug build, skip debug detection agar development tidak terhambat
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, "Debug build — debug detection skipped")
+            return false
+        }
+
         val isDebugFlag = (context.applicationInfo.flags and
                 android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
         val isDebuggerAttached = android.os.Debug.isDebuggerConnected()
@@ -105,7 +115,7 @@ class AppIntegrityChecker(private val context: Context) {
         if (isDebugFlag) Log.d(TAG, "App has FLAG_DEBUGGABLE set")
         if (isDebuggerAttached) Log.d(TAG, "Debugger is attached")
 
-        return false // Allow during development
+        return isDebugFlag || isDebuggerAttached
     }
 
     /**

@@ -39,6 +39,9 @@ interface OfficialUrlDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertAll(urls: List<OfficialUrl>)
 
+    @Query("SELECT domain FROM official_urls")
+    fun getAllDomains(): List<String>
+
     @Query("DELETE FROM official_urls")
     fun deleteAll()
 }

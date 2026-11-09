@@ -1,5 +1,6 @@
 package com.example.ai_project_singapore.ui
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
