@@ -47,6 +47,7 @@ class DashboardFragment : Fragment() {
     private lateinit var tvStatCalls: TextView
     private lateinit var rvRecentThreats: RecyclerView
     private lateinit var tvNoThreats: TextView
+    private lateinit var tvReportSummary: TextView
 
     private val recentAdapter = ActivityLogAdapter()
     private val recentItems = mutableListOf<ActivityLogItem>()
@@ -57,6 +58,10 @@ class DashboardFragment : Fragment() {
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == "com.phishguard.ai.REPORT_UPDATE") {
+                loadReports()
+                return
+            }
             if (intent?.action == "com.phishguard.ai.LOG_UPDATE") {
                 val message = intent.getStringExtra("message") ?: return
                 val source = intent.getStringExtra("source") ?: "System"
@@ -114,6 +119,7 @@ class DashboardFragment : Fragment() {
         tvStatCalls = view.findViewById(R.id.tvStatCalls)
         rvRecentThreats = view.findViewById(R.id.rvRecentThreats)
         tvNoThreats = view.findViewById(R.id.tvNoThreats)
+        tvReportSummary = view.findViewById(R.id.tvReportSummary)
 
         rvRecentThreats.layoutManager = LinearLayoutManager(requireContext())
         rvRecentThreats.adapter = recentAdapter
@@ -131,7 +137,11 @@ class DashboardFragment : Fragment() {
         loadPersistedLogs()
         
         updateUI()
-        val filter = IntentFilter("com.phishguard.ai.LOG_UPDATE")
+        loadReports()
+        val filter = IntentFilter().apply {
+            addAction("com.phishguard.ai.LOG_UPDATE")
+            addAction("com.phishguard.ai.REPORT_UPDATE")
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requireContext().registerReceiver(logReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
@@ -213,6 +223,18 @@ class DashboardFragment : Fragment() {
         } else {
             tvNoThreats.visibility = View.GONE
             rvRecentThreats.visibility = View.VISIBLE
+        }
+    }
+
+    private fun loadReports() {
+        val reports = requireContext().getSharedPreferences("activity_log", Context.MODE_PRIVATE)
+            .getStringSet("reports", emptySet()) ?: emptySet()
+        val latest = reports.maxByOrNull { it.split('|').getOrNull(1)?.toLongOrNull() ?: 0L }
+        tvReportSummary.text = if (latest == null) {
+            getString(R.string.no_reports)
+        } else {
+            val parts = latest.split("|", limit = 4)
+            getString(R.string.reports_summary, reports.size, parts.getOrNull(2).orEmpty(), parts.getOrNull(3).orEmpty())
         }
     }
 }

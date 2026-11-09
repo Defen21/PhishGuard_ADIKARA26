@@ -76,6 +76,12 @@ class SettingsFragment : Fragment() {
             prefs.ttsEnabled = checked
         }
 
+        // Notification Access (SMS/chat interceptor)
+        val btnNotifAccess = view.findViewById<LinearLayout>(R.id.btnNotifAccess)
+        btnNotifAccess.setOnClickListener {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
+
         // Export Activity Log ke CSV (bukti laporan, mis. untuk kepolisian)
         val btnExport = view.findViewById<LinearLayout>(R.id.btnExportLog)
         btnExport.setOnClickListener { exportActivityLog() }

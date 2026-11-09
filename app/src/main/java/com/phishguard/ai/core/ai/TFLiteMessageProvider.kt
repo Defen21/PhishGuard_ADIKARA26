@@ -111,6 +111,14 @@ class TFLiteMessageProvider : AIModelProvider {
 
         // Kategori: INVESTASI BODONG (binary option, robot trading, skema ponzi)
         PhishingRule("investasi bodong",     0.93f, "INVESTASI_BODONG"),
+        PhishingRule("mulai investasi",      0.80f, "INVESTASI_BODONG"),
+        PhishingRule("investasi di",         0.75f, "INVESTASI_BODONG"),
+        PhishingRule("duit dingin",          0.72f, "INVESTASI_BODONG"),
+        PhishingRule("return hingga",        0.78f, "INVESTASI_BODONG"),
+        PhishingRule("return",               0.55f, "INVESTASI_BODONG", weak = true),
+        PhishingRule("per bulannya",         0.58f, "INVESTASI_BODONG", weak = true),
+        PhishingRule("% per bulan",          0.80f, "INVESTASI_BODONG"),
+        PhishingRule("dapatkan keuntungan",  0.70f, "INVESTASI_BODONG"),
         PhishingRule("binary option",        0.90f, "INVESTASI_BODONG"),
         PhishingRule("robot trading",        0.90f, "INVESTASI_BODONG"),
         PhishingRule("trading otomatis",     0.88f, "INVESTASI_BODONG"),

@@ -38,7 +38,12 @@ class PhishGuardService : AccessibilityService() {
     // Track last URL to avoid duplicate scans
     private var lastDetectedUrl: String = ""
     private var lastDetectedMessage: String = ""
+    // Pesan yang user pilih "Abaikan". Tahan sampai isi pesan berubah agar
+    // window-state event setelah WarningActivity ditutup tidak memunculkan
+    // warning yang sama lagi.
+    private var ignoredMessage: String = ""
     private var warningShownForUrl: String = ""
+
 
     // Mute-window setelah blokir+back: cegah loop scan bila browser reload
     // halaman phising yang sama (fenomena "sudah klik blokir tetapi tidak ke back").
@@ -64,6 +69,28 @@ class PhishGuardService : AccessibilityService() {
             if (intent?.action == ACTION_BLOCK_NUMBER) {
                 val number = intent.getStringExtra("phone_number").orEmpty()
                 if (number.isNotBlank()) blockPhoneNumber(number)
+                return
+            }
+
+            if (intent?.action == ACTION_IGNORE_MESSAGE) {
+                ignoredMessage = intent.getStringExtra("ignored_message").orEmpty()
+                lastDetectedMessage = ignoredMessage
+                Log.d(TAG, "HITL ✅ User mengabaikan pesan: ${ignoredMessage.take(80)}")
+                return
+            }
+
+            if (intent?.action == ACTION_REPORT_MESSAGE) {
+                ignoredMessage = intent.getStringExtra("ignored_message").orEmpty()
+                lastDetectedMessage = ignoredMessage
+                backPendingAfterWarning = false
+                val reportedUrl = intent.getStringExtra("target_url").orEmpty()
+                if (reportedUrl.isNotBlank()) {
+                    val normalized = normalizeUrl(reportedUrl)
+                    hitlBlacklistUrls.add(normalized)
+                    saveUrlSet(PREF_BLACKLIST, hitlBlacklistUrls)
+                    saveToRoomBlacklist(normalized)
+                    Log.d(TAG, "HITL 🚩 Pesan dilaporkan: $normalized")
+                }
                 return
             }
 
@@ -128,6 +155,8 @@ class PhishGuardService : AccessibilityService() {
                 addAction(ACTION_MARK_SAFE)
                 addAction(ACTION_MARK_THREAT)
                 addAction(ACTION_BLOCK_NUMBER)
+                addAction(ACTION_IGNORE_MESSAGE)
+                addAction(ACTION_REPORT_MESSAGE)
                 addAction(ACTION_WARNING_CLOSED)
             }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -361,6 +390,12 @@ class PhishGuardService : AccessibilityService() {
                 if (event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
                     event.eventType != AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) return
 
+                // "Abaikan" menahan pesan yang sama sampai konten berubah.
+                // Window/content events setelah WarningActivity ditutup tidak
+                // boleh membuka warning identik lagi.
+                if (ignoredMessage.isNotBlank() &&
+                    event.text?.joinToString(" ")?.trim() == ignoredMessage) return
+
                 // ═ Ekstrak teks pesan dari event ═
                 val rawEventText = event.text?.joinToString(" ")?.trim() ?: ""
                 if (rawEventText.length < 20) return  // Skip event singkat (UI updates)
@@ -372,6 +407,11 @@ class PhishGuardService : AccessibilityService() {
                 }
 
                 val messageText = rawEventText
+
+                // Pesan baru membatalkan keputusan Abaikan sebelumnya.
+                if (ignoredMessage.isNotBlank() && ignoredMessage != messageText) {
+                    ignoredMessage = ""
+                }
 
                 // Hindari duplikasi analisis
                 if (messageText == lastDetectedMessage) return
@@ -623,6 +663,12 @@ class PhishGuardService : AccessibilityService() {
                 val bestMessage = candidates.maxByOrNull { it.length } ?: return@postDelayed
                 Log.d(TAG, "Scan terbaik: ${bestMessage.take(80)}")
 
+                // Jalur proactive scan juga harus menghormati "Abaikan".
+                if (bestMessage == ignoredMessage) {
+                    Log.d(TAG, "Pesan diabaikan, skip proactive scan.")
+                    return@postDelayed
+                }
+
                 lastDetectedMessage = bestMessage
                 pipeline?.analyzeMessageLayers(bestMessage, "", sourceName) { result ->
                     handleLayeredMessageResult(result, bestMessage, sourceName)
@@ -713,6 +759,7 @@ class PhishGuardService : AccessibilityService() {
         sendLogToUI("$title - $source", source, "SCAM")
         launchMessageWarning(
             messageText = originalText.take(150),
+            ignoredText = originalText,
             reason = "$title\n\n$detail",
             source = source,
             extraThreatLayer = extraKey
@@ -744,6 +791,7 @@ class PhishGuardService : AccessibilityService() {
 
     private fun launchMessageWarning(
         messageText: String,
+        ignoredText: String = messageText,
         reason: String,
         source: String,
         extraThreatLayer: String = ""
@@ -759,6 +807,7 @@ class PhishGuardService : AccessibilityService() {
                 putExtra(WarningActivity.EXTRA_PHISHING_URL, messageText)
                 putExtra(WarningActivity.EXTRA_REASON, reason)
                 putExtra(WarningActivity.EXTRA_SOURCE, source)
+                putExtra("ignored_message", ignoredText)
                 putExtra("is_sms_mode", true)
                 putExtra("phone_number", extractedPhone)
                 putExtra("threat_layer", extraThreatLayer)
@@ -882,6 +931,8 @@ class PhishGuardService : AccessibilityService() {
         const val ACTION_MARK_SAFE    = "com.phishguard.ai.MARK_SAFE"
         const val ACTION_MARK_THREAT  = "com.phishguard.ai.MARK_THREAT"
         const val ACTION_BLOCK_NUMBER = "com.phishguard.ai.BLOCK_NUMBER"
+        const val ACTION_IGNORE_MESSAGE = "com.phishguard.ai.IGNORE_MESSAGE"
+        const val ACTION_REPORT_MESSAGE = "com.phishguard.ai.REPORT_MESSAGE"
         const val ACTION_WARNING_CLOSED = "com.phishguard.ai.WARNING_CLOSED"
 
         private const val PREF_BLACKLIST = "urls"

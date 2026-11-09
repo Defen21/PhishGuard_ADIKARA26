@@ -72,6 +72,7 @@ class WarningActivity : AppCompatActivity() {
         setContentView(R.layout.activity_warning)
 
         val url        = intent.getStringExtra(EXTRA_PHISHING_URL) ?: "Tidak diketahui"
+        val ignoredMessage = intent.getStringExtra("ignored_message") ?: url
         val reason     = intent.getStringExtra(EXTRA_REASON) ?: getString(R.string.warning_subtitle)
         val source     = intent.getStringExtra(EXTRA_SOURCE).orEmpty()
         val confidence = intent.getFloatExtra(EXTRA_CONFIDENCE, 0.90f)
@@ -137,12 +138,39 @@ class WarningActivity : AppCompatActivity() {
                     finish()
                 }
             } else {
-                // Aplikasi chat tanpa nomor pengirim (WhatsApp, Telegram, MMS)
+                // Chat tanpa nomor: laporkan, jangan hanya menutup popup.
                 btnBlock.setText(R.string.warning_btn_close)
                 btnSafe.setText(R.string.warning_btn_ignore)
-                btnBlock.setOnClickListener { finish() }
+                btnBlock.setOnClickListener {
+                    setBusy(btnBlock, btnSafe)
+                    val reportedUrl = extractFirstUrl(ignoredMessage)
+                    sendToService(PhishGuardService.ACTION_REPORT_MESSAGE) {
+                        putExtra("target_url", reportedUrl)
+                        putExtra("ignored_message", ignoredMessage)
+                    }
+                    logActivity("Reported message${reportedUrl.takeIf { it.isNotBlank() }?.let { ": $it"} ?: ""}", source, "USER_REPORTED", countAsBlocked = false)
+                    val reportUrls = if (reportedUrl.isBlank()) emptyList() else listOf(reportedUrl)
+                    val localReportId = java.util.UUID.randomUUID().toString()
+                    saveLocalReport(localReportId, reportedUrl, "Terkirim")
+                    FirebaseSyncManager(applicationContext).uploadUserReport(
+                        message = ignoredMessage,
+                        urls = reportUrls,
+                        source = source,
+                        reason = reason,
+                        confidence = confidence,
+                        onSuccess = { updateLocalReport(localReportId, "Diproses") }
+                    )
+                    if (reportedUrl.isNotBlank()) uploadToFirebase(reportedUrl, reason, confidence)
+                    Toast.makeText(this, R.string.risk_message_reported, Toast.LENGTH_SHORT).show()
+                    finish()
+                }
             }
-            btnSafe.setOnClickListener { finish() }
+            btnSafe.setOnClickListener {
+                sendToService(PhishGuardService.ACTION_IGNORE_MESSAGE) {
+                    putExtra("ignored_message", ignoredMessage)
+                }
+                finish()
+            }
             return
         }
 
@@ -198,6 +226,10 @@ class WarningActivity : AppCompatActivity() {
         secondary.isEnabled = false
     }
 
+    private fun extractFirstUrl(text: String): String =
+        Regex("https?://[^\\s]+|(?:www\\.)?[a-zA-Z0-9-]+\\.[a-zA-Z]{2,}(?:/[^\\s]*)?")
+            .find(text)?.value?.trimEnd('.', ',', '!', '?', ')') ?: ""
+
     private fun hostOf(url: String): String =
         url.removePrefix("https://").removePrefix("http://")
             .substringBefore('/').substringBefore('?').removePrefix("www.")
@@ -226,6 +258,24 @@ class WarningActivity : AppCompatActivity() {
             putExtra("source", source)
             putExtra("type", type)
         })
+    }
+
+    private fun saveLocalReport(reportId: String, indicator: String, status: String) {
+        val prefs = getSharedPreferences("activity_log", Context.MODE_PRIVATE)
+        val record = "$reportId|${System.currentTimeMillis()}|${indicator.replace('|', ' ')}|$status"
+        val reports = (prefs.getStringSet("reports", emptySet()) ?: emptySet()).toMutableSet()
+        reports.add(record)
+        prefs.edit().putStringSet("reports", reports.toList().takeLast(50).toSet()).apply()
+        sendBroadcast(Intent("com.phishguard.ai.REPORT_UPDATE").setPackage(packageName))
+    }
+
+    private fun updateLocalReport(reportId: String, status: String) {
+        val prefs = getSharedPreferences("activity_log", Context.MODE_PRIVATE)
+        val reports = (prefs.getStringSet("reports", emptySet()) ?: emptySet()).map { record ->
+            if (record.startsWith("$reportId|")) "$record".substringBeforeLast('|') + "|$status" else record
+        }.toSet()
+        prefs.edit().putStringSet("reports", reports).apply()
+        sendBroadcast(Intent("com.phishguard.ai.REPORT_UPDATE").setPackage(packageName))
     }
 
     private fun uploadToFirebase(url: String, reason: String, confidence: Float) {

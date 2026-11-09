@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * Room Database untuk menyimpan data phishing secara lokal.
@@ -25,6 +27,18 @@ abstract class PhishingDatabase : RoomDatabase() {
     abstract fun officialUrlDao(): OfficialUrlDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // v2 menambahkan kolom pada tabel yang sudah ada.
+                // Seluruh ALTER bersifat idempotent (Room hanya menjalankan
+                // migration sekali per versi), jadi data user AMAN — tidak
+                // ada DROP TABLE seperti fallbackToDestructiveMigration.
+                db.execSQL("ALTER TABLE phishing_urls ADD COLUMN isCommunityReported INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE official_urls ADD COLUMN organization TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE official_urls ADD COLUMN category TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         @Volatile
         private var INSTANCE: PhishingDatabase? = null
 
@@ -35,7 +49,7 @@ abstract class PhishingDatabase : RoomDatabase() {
                     PhishingDatabase::class.java,
                     "phishing_database"
                 )
-                .fallbackToDestructiveMigration()
+                .addMigrations(MIGRATION_1_2)
                 .build()
                 INSTANCE = instance
                 instance

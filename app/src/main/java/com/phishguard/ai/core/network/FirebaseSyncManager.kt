@@ -273,6 +273,47 @@ class FirebaseSyncManager(private val context: Context) {
     }
 
     /**
+     * Simpan laporan anonim untuk pipeline dedup/verdict.
+     * Isi pesan mentah tidak pernah dikirim.
+     */
+    fun uploadUserReport(
+        message: String,
+        urls: List<String>,
+        source: String,
+        reason: String,
+        confidence: Float,
+        onSuccess: ((String) -> Unit)? = null,
+        onFailure: ((String) -> Unit)? = null
+    ) {
+        val messageHash = sha256(message)
+        val reportId = java.util.UUID.randomUUID().toString()
+        val data = hashMapOf(
+            "message_hash" to messageHash,
+            "urls" to urls.distinct().take(10),
+            "source" to source,
+            "reason" to reason.take(500),
+            "confidence" to confidence.coerceIn(0f, 1f),
+            "status" to "pending",
+            "created_at" to com.google.firebase.Timestamp.now()
+        )
+
+        db.collection("reports").document(reportId).set(data)
+            .addOnSuccessListener {
+                Log.d(TAG, "✅ Laporan anonim tersimpan: ${messageHash.take(12)}")
+                onSuccess?.invoke(reportId)
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "Gagal menyimpan laporan: ${e.message}")
+                onFailure?.invoke(e.message ?: "Unknown error")
+            }
+    }
+
+    private fun sha256(value: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(value.trim().lowercase().toByteArray())
+            .joinToString("") { "%02x".format(it) }
+
+    /**
      * Perbarui versi database di server agar semua user lain trigger sync.
      * Format versi: "YYYY.MM.DD.XXXX" — sederhana dan mudah dibandingkan.
      */
