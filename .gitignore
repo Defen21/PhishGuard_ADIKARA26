@@ -42,3 +42,4 @@ app/google-services.json
 /build/
 /app/build/
 /.gradle/
+google-services.json
