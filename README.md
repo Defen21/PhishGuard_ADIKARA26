@@ -25,6 +25,7 @@ tidak lagi melindungi siapa pun.
 - [Angka yang terukur](#angka-yang-terukur)
 - [Membangun proyek](#membangun-proyek)
 - [Menyiapkan aplikasi di perangkat](#menyiapkan-aplikasi-di-perangkat)
+- [Catatan untuk pengembang](#catatan-untuk-pengembang)
 - [Struktur proyek](#struktur-proyek)
 - [Memperbarui blocklist](#memperbarui-blocklist)
 - [Keamanan basis data komunitas](#keamanan-basis-data-komunitas)
@@ -32,6 +33,7 @@ tidak lagi melindungi siapa pun.
 - [Pengujian](#pengujian)
 - [Batasan yang diketahui](#batasan-yang-diketahui)
 - [Sebelum rilis](#sebelum-rilis)
+- [Riwayat perubahan penting](#riwayat-perubahan-penting)
 - [Kredit](#kredit)
 
 ---
@@ -93,6 +95,14 @@ mengenai situs tepercaya.
 | 3 | Hostname di database phishing lokal | Room | ancaman, ≥0,90 |
 | 4 | Domain di blocklist global | `DomainBlocklist` (Bloom) | ancaman, 0,95 |
 | 5 | Skoring heuristik | `UrlRiskScorer` | sesuai skor |
+
+Langkah 3 sengaja **melewati host besar dan hosting berbagi-pakai**
+(`google.com`, `blogspot.com`, `github.io`, …). Umpan publik melaporkan URL
+abusif yang menumpang di host sah — PhishTank pernah melaporkan
+`google.com/share.google?q=…`, dan entri itu tersimpan dengan
+`domain="google.com"`. Tanpa pengecualian ini, satu laporan semacam itu
+membuat **seluruh** google.com divonis phishing; terbukti terjadi di
+perangkat uji. URL persisnya tetap diblokir lewat langkah 2.
 
 Sebelum masuk pipeline, `PhishGuardService` membersihkan masukannya:
 
@@ -168,8 +178,14 @@ pertama yang menemukan ancaman:
 Pada lapisan isi, pola dibagi dua kelas. Pola **kuat** khas penipuan
 (`unduh apk`, `kode otp anda`, `rekening anda diblokir`) bisa berdiri
 sendiri. Pola **lemah** yang juga lazim di pesan sah (`install aplikasi`,
-`undangan pernikahan`, `bit.ly`) hanya boleh menguatkan, tidak pernah memicu
-peringatan sendirian.
+`undangan pernikahan`, `bit.ly`) tidak pernah memicu peringatan sendirian.
+
+Tapi pola lemah **menumpuk** juga berarti sesuatu. Tiga pola lemah dari
+minimal dua kategori berbeda sudah cukup jadi titik awal. Tanpa aturan ini,
+scam bergaya lunak yang paling lazim di WhatsApp lolos total — pesan seperti
+*"Selamat! Anda dapat hadiah 100 juta, klik link berikut dan install
+aplikasinya"* tidak memuat satu pun frasa kuat, sehingga skornya nol.
+Satu atau dua pola lemah tetap tidak berarti apa-apa.
 
 ---
 
@@ -314,7 +330,11 @@ dinyalakan pengguna sendiri di Pengaturan:
 1. **Layanan Aksesibilitas** — Pengaturan → Aksesibilitas → PhishGuard AI.
    Tanpa ini pemantauan peramban dan chat tidak berjalan sama sekali.
 2. **Akses Notifikasi** — Pengaturan → Akses notifikasi → PhishGuard AI.
-   Diperlukan untuk mencegat notifikasi SMS/chat penipuan.
+   **Tanpa ini deteksi WhatsApp, Telegram, dan chat lain sama sekali tidak
+   berjalan** — `SmsNotificationInterceptorService` tidak pernah hidup, jadi
+   tidak ada notifikasi yang sampai ke aplikasi. Ini penyebab paling sering
+   ketika orang melaporkan "deteksi WhatsApp tidak jalan"; hampir selalu
+   izinnya yang belum diberikan, bukan bugnya.
 3. **Tampilkan di atas aplikasi lain** — pada sebagian ROM (Xiaomi, Oppo,
    Vivo) diperlukan agar layar peringatan bisa muncul di atas peramban.
 
@@ -337,6 +357,19 @@ pertama dibuka.
 > dibatasi ke paket aplikasi sendiri agar tidak terbaca aplikasi lain.
 
 ---
+
+## Catatan untuk pengembang
+
+**Sistem notifikasi dibekukan.** `SmsNotificationInterceptorService` dan
+jalur peringatan notifikasinya sudah berfungsi dan diverifikasi di
+perangkat. Jangan diubah tanpa permintaan eksplisit — termasuk daftar paket
+yang dipantau, ambang keyakinan, dan bentuk notifikasi penggantinya.
+Perbaikan deteksi sebaiknya dilakukan di lapisan analisis
+(`TFLiteMessageProvider`, `AnalysisPipeline`), bukan di jalur notifikasinya.
+
+Isi pesan **tidak boleh** dicetak ke log. Notifikasi chat adalah percakapan
+pribadi pengguna, dan siapa pun yang bisa membaca logcat ikut membacanya.
+Catat panjang atau kategorinya saja.
 
 ## Struktur proyek
 
@@ -423,9 +456,18 @@ Firestore-nya harus mengizinkan tulisan anonim supaya fitur laporan berfungsi.
 Konsekuensinya, laporan bisa datang dari mana saja — bukan hanya dari
 aplikasi.
 
-Aturannya kini dilacak di [`firestore.rules`](firestore.rules), bukan hanya
-ada di konsol. Isinya membatasi bentuk tulisan, mengunci `metadata/` dan
-`official_urls/` dari klien, dan menutup penghapusan. Deploy dengan:
+Sampai 20 Agustus 2026 aturan yang berlaku di produksi adalah bawaan
+pengembangan — `allow read, write: if true` untuk seluruh database. Siapa
+pun bisa membaca, menulis, **dan menghapus** apa pun, termasuk mengosongkan
+daftar putih yang menentukan bahwa `bca.co.id` aman. Aturan itu kini sudah
+diganti dan diterapkan.
+
+Aturannya dilacak di [`firestore.rules`](firestore.rules), bukan hanya ada
+di konsol. Isinya membatasi bentuk tulisan, mengunci `official_urls/` dari
+klien, membatasi `metadata/versions` hanya pada field versi, dan menutup
+penghapusan. Cadangan aturan lama ada di
+[`docs/firestore-rules-sebelum-pengetatan.md`](docs/firestore-rules-sebelum-pengetatan.md).
+Deploy dengan:
 
 ```bash
 firebase deploy --only firestore:rules
@@ -435,6 +477,10 @@ Berkas itu juga memuat langkah peningkatan yang sebenarnya menutup celah —
 **App Check** dan **Anonymous Auth**. Terapkan perubahan kodenya lebih dulu,
 sebarkan versinya, baru perketat aturannya; kalau dibalik, aplikasi yang sudah
 beredar berhenti melapor.
+
+Perlu diingat saat menguji: karena penghapusan kini tertutup untuk klien,
+data uji tidak bisa dibersihkan lewat aplikasi. Pembersihan memerlukan
+kredensial pemilik proyek (`firebase login`), yang melewati aturan.
 
 **Daftar putih selalu menang.** Karena laporan komunitas bisa keliru atau
 disuntik, `AnalysisPipeline` memeriksa daftar domain resmi **sebelum** semua
@@ -479,18 +525,24 @@ akan mendeteksinya sendiri saat inisialisasi.
 ./gradlew testDebugUnitTest
 ```
 
-16 pengujian, semuanya murni JVM tanpa emulator:
+27 pengujian, semuanya murni JVM tanpa emulator:
 
-- **`UrlRiskScorerTest`** (12) mengunci perilaku dua arah — situs normal
+- **`UrlRiskScorerTest`** (18) mengunci perilaku dua arah — situs normal
   tidak boleh diblokir (halaman `/login`, domain bertanda hubung, `.shop`,
-  kata yang memuat nama brand), dan pola phishing sungguhan harus tetap
-  tertangkap (peniruan brand berafiks, typosquat, IP mentah, domain judi).
+  kata yang memuat nama brand, satu istilah judi ambigu), dan pola phishing
+  sungguhan harus tetap tertangkap (peniruan brand berafiks, typosquat, IP
+  mentah, domain judi bertumpuk istilah).
+- **`MessageRuleEngineTest`** (5) menjaga mesin aturan pesan: percakapan
+  sehari-hari dan satu frasa lunak harus aman; scam gaya lunak, frasa kuat,
+  dan URL peniru bank harus tertangkap.
 - **`DomainBlocklistTest`** (4) menguji kesepakatan algoritma Python ↔ Kotlin
   memakai vektor acuan. Ini penting: bila perhitungan indeks di kedua sisi
   menyimpang sedikit saja, aset 9,4 MB berhenti mencocokkan apa pun **tanpa
   error, tanpa crash** — deteksi mati diam-diam.
 
----
+Butuh `testOptions.unitTests.isReturnDefaultValues = true` di
+`app/build.gradle.kts`, karena `android.util.Log` melempar "not mocked" di
+JVM dan kelas heuristik memakainya untuk penelusuran.
 
 ## Batasan yang diketahui
 
@@ -505,6 +557,12 @@ akan mendeteksinya sendiri saat inisialisasi.
   `SpeechRecognizer` Android tidak selalu punya model luring bahasa Indonesia.
 - **Ambang belum tervalidasi lapangan** — lihat [Menyetel ambang
   deteksi](#menyetel-ambang-deteksi).
+- **Deteksi chat bergantung pada teks notifikasi**, bukan isi percakapan.
+  Pesan yang notifikasinya disembunyikan pengguna, atau yang hanya berisi
+  gambar, tidak bisa dinilai.
+- **ROM agresif mengembalikan izin.** Vivo/Xiaomi/Oppo bisa mematikan lagi
+  Aksesibilitas dan Akses Notifikasi setelah reboot atau pembaruan aplikasi.
+  Periksa ulang keduanya kalau deteksi tiba-tiba berhenti.
 - **Acuan domain sah kurang mewakili Indonesia.** Tranco top 1M hanya memuat
   5.035 domain `.id`, sehingga kalibrasi kata berbahasa Indonesia dilakukan
   dengan sangat konservatif.
@@ -528,6 +586,37 @@ akan mendeteksinya sendiri saat inisialisasi.
       layanan latar dan memblokir tampilan di atas aplikasi lain.
 
 ---
+
+## Riwayat perubahan penting
+
+Ditulis di sini karena keputusannya memengaruhi cara kerja deteksi, bukan
+sekadar isi kode.
+
+**Skoring berbobot menggantikan rantai aturan.** Versi awal memblokir begitu
+satu aturan cocok — kata `login` di path, dua tanda hubung, TLD `.shop`.
+Sekarang setiap sinyal hanya menyumbang bobot dan hanya akumulasinya yang
+bertindak. Ambang 0,55 dan 0,80 memisahkan diam, notifikasi, dan blokir.
+
+**Blocklist Lyra 4,1 juta domain** dikemas jadi Bloom filter 9,4 MB dan
+dipetakan langsung dari APK. TLD tersangka dan kata penanda judi tidak lagi
+ditebak, melainkan dikalibrasi dari data.
+
+**Istilah judi dipisah dua tingkat** setelah terbukti memblokir `toto.co.jp`
+dan `slotcarshop.com`. Yang tidak ambigu tetap memvonis seketika; yang
+ambigu butuh dua sinyal.
+
+**Host berbagi-pakai dikecualikan dari pencocokan per-domain** setelah satu
+laporan PhishTank pada `google.com` membuat seluruh google.com diblokir di
+perangkat uji.
+
+**Daftar putih resmi didahulukan** di seluruh jalur analisis, sehingga
+laporan komunitas maupun umpan publik tidak bisa menjatuhkan domain bank.
+
+**Pola pesan lemah bisa menumpuk**, sehingga scam bergaya lunak khas
+WhatsApp tidak lagi lolos.
+
+**Aturan Firestore diperketat dan diterapkan**, menggantikan bawaan
+pengembangan yang terbuka penuh.
 
 ## Kredit
 
