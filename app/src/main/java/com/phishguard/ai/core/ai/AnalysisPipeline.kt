@@ -109,6 +109,24 @@ class AnalysisPipeline(private val context: Context) {
                     return@thread
                 }
 
+                // Step 2.6: Blocklist Lyra (4,1 juta domain, luring via Bloom
+                // filter). Ditaruh SETELAH whitelist domain resmi supaya
+                // kekeliruan filter tidak pernah mengenai situs tepercaya.
+                DomainBlocklist.get(context)?.let { blocklist ->
+                    if (blocklist.contains(domain)) {
+                        Log.d(TAG, "Domain $domain cocok di blocklist Lyra")
+                        callback(AnalysisResult(
+                            isThreat = true,
+                            confidence = 0.95f,
+                            reason = "Domain terdaftar di basis data ancaman global " +
+                                    "(phishing, malware, atau judi online).",
+                            threatType = ThreatCategory.PHISHING,
+                            metadata = mapOf("level" to "DANGEROUS", "source" to "lyra")
+                        ))
+                        return@thread
+                    }
+                }
+
                 // Step 3: Run AI provider
                 val input = AnalysisInput(
                     type = InputType.URL,
@@ -288,6 +306,17 @@ class AnalysisPipeline(private val context: Context) {
                     if (knownOfficial != null) {
                         Log.d(TAG, "Layer 1 ✅ Official URL: $domain")
                         continue // URL resmi, skip ke URL berikutnya
+                    }
+
+                    // Blocklist global Lyra — tautan di SMS/chat adalah jalur
+                    // penipuan nomor satu, jadi diperiksa di sini juga.
+                    if (DomainBlocklist.get(context)?.contains(domain) == true) {
+                        Log.w(TAG, "Layer 1 🔴 $domain ada di blocklist Lyra")
+                        callback(LayeredResult.threat(
+                            ThreatLayer.URL, url,
+                            "Domain terdaftar di basis data ancaman global.", 0.95f
+                        ))
+                        return@thread
                     }
 
                     // Analisis AI URL (LstmUrlProvider)

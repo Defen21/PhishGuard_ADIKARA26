@@ -45,17 +45,28 @@ object UrlRiskScorer {
     // ── Daftar acuan ────────────────────────────────────────────────────
 
     /**
-     * TLD yang benar-benar didominasi penyalahgunaan. Sengaja TIDAK memuat
-     * .shop/.online/.site/.live/.info/.link/.club/.store — TLD itu dipakai
-     * banyak UMKM sah dan jadi sumber false-positive terbesar di versi lama.
+     * TLD yang benar-benar disalahgunakan — DIKALIBRASI DARI DATA, bukan
+     * tebakan. Dihitung oleh tools/build_blocklist.py sebagai lift: pangsa
+     * TLD di 4,1 juta domain jahat (Lyra) dibagi pangsanya di Tranco top 1M.
+     * Ambang lift ≥ 8×. Lihat tools/blocklist_report.md untuk angkanya.
+     *
+     * Beberapa terlihat tidak berbahaya (.digital, .store, .site) tapi
+     * memang terbukti disalahgunakan berlipat kali. Itu aman diadopsi
+     * KARENA arsitektur skoring baru: TLD hanya menyumbang 0,30 dan tidak
+     * pernah cukup untuk memblokir sendirian.
      */
     private val CHEAP_TLDS = setOf(
-        "tk", "ml", "ga", "cf", "gq", "xyz", "top", "buzz", "icu", "click",
-        "loan", "work", "rest", "gdn", "mom", "party", "racing", "date",
-        "download", "win", "bid", "stream", "trade", "review", "country",
-        "science", "cricket", "accountant", "faith", "zip", "mov", "cam",
-        "surf", "quest", "autos", "beauty", "hair", "skin", "monster",
-        "sbs", "cyou", "bond", "lol", "makeup", "boats"
+        "tk", "gdn", "stream", "beer", "review", "digital", "boats", "loan",
+        "motorcycles", "irish", "gq", "autos", "click", "homes", "sbs", "lol",
+        "christmas", "cf", "forum", "beauty", "rest", "pics", "yoga", "college",
+        "cyou", "makeup", "download", "skin", "bid", "hair", "quest", "icu",
+        "poker", "yachts", "garden", "buzz", "ga", "help", "today", "vu",
+        "store", "art", "site", "xyz", "lat", "ml", "rent", "bond",
+        // Tetap dipertahankan dari daftar sebelumnya: jumlahnya di Lyra
+        // di bawah ambang sampel, tapi reputasinya sudah mapan.
+        "top", "work", "mom", "party", "racing", "date", "win", "trade",
+        "country", "science", "cricket", "accountant", "faith", "zip", "mov",
+        "cam", "surf", "monster"
     )
 
     /** Hosting gratis / page-builder: sah dipakai, tapi juga sarang phishing. */
@@ -202,7 +213,12 @@ object UrlRiskScorer {
 
         // ── Judi online ─────────────────────────────────────────────────
         if (JudolWordlist.hasStrongSignal(hostname)) {
-            signals += Signal("Nama domain memuat istilah judi online", 0.85f)
+            // 0,72 dan bukan blokir langsung: kata seperti "slot"/"toto" bisa
+            // muncul di domain sah (toko slot car, merek Toto). Domain judi
+            // sungguhan hampir selalu punya sinyal kedua (TLD murah, angka,
+            // hosting gratis) sehingga tetap tembus ambang — dan yang sudah
+            // dikenal tertangkap lebih dulu oleh DomainBlocklist.
+            signals += Signal("Nama domain memuat istilah judi online", 0.72f)
         } else if (pageText.isNotBlank()) {
             val hit = JudolWordlist.scan(pageText)
             if (JudolWordlist.hasStrongSignal(pageText) && JudolWordlist.isLikelyJudol(hit)) {

@@ -13,12 +13,29 @@ class JudolWordlist {
     companion object {
         private data class Entry(val terms: List<String>, val weight: Int)
 
-        // Istilah judi/spam dengan keyakinan tinggi. Page-content hanya boleh
-        // dinaikkan jadi ancaman bila ada minimal 1 term ini (mengurai FP bonus/gratis).
+        /**
+         * Istilah judi berkeyakinan tinggi. Konten halaman hanya boleh
+         * dinaikkan jadi ancaman bila ada minimal satu istilah di sini.
+         *
+         * DIKALIBRASI dari 1,8 juta domain judi Lyra (lihat
+         * tools/blocklist_report.md). Penambahan dari data: rtp (177×),
+         * gacor (86×), mpo (57×), maxwin, zeus, mahjong.
+         *
+         * Yang SENGAJA TIDAK diambil meski lift-nya tinggi: kata Indonesia
+         * biasa seperti "daftar", "situs", "klik", "cuan", "jitu", "menang",
+         * "terbaik", "mantap". Lift-nya tampak tinggi hanya karena acuan
+         * domain sah (Tranco global) kurang memuat situs berbahasa
+         * Indonesia — memakainya akan memblokir situs lokal yang wajar.
+         * Nama merek judi (kudetabet, jojobet, madridbet) juga tidak
+         * dimasukkan: domain persisnya sudah tertangkap DomainBlocklist,
+         * sedangkan daftar ini untuk menebak domain yang BELUM terdaftar.
+         */
         private val STRONG = listOf(
-            "slot", "judi", "togel", "gacor", "kasino", "pragmatic", "sbobet",
-            "olympus", "starlight", "aztec", "bonanza", "slot88", "habanero",
-            "microgaming", "scatter", "maxwin", "bandarq", "pragmaticplay", "rtp"
+            "slot", "judi", "togel", "gacor", "kasino", "casino", "pragmatic",
+            "sbobet", "olympus", "starlight", "aztec", "bonanza", "slot88",
+            "habanero", "microgaming", "scatter", "maxwin", "bandarq",
+            "pragmaticplay", "rtp", "mpo", "parlay", "mahjong", "zeus",
+            "baccarat", "roulette", "toto", "bolatangkas", "sportsbook"
         )
 
         private val LIST = listOf(

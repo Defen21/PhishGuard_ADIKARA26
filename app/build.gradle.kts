@@ -43,9 +43,10 @@ android {
         jvmTarget = "11"
     }
 
-    // TFLite: jangan compress file .tflite
+    // Jangan kompres: keduanya dipetakan ke memori langsung dari APK.
+    // .tflite untuk model, .bloom untuk blocklist domain (DomainBlocklist).
     aaptOptions {
-        noCompress("tflite")
+        noCompress("tflite", "bloom")
     }
 }
 
