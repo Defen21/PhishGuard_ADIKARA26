@@ -1,4 +1,4 @@
-package com.example.ai_project_singapore
+package com.phishguard.ai
 
 import org.junit.Test
 

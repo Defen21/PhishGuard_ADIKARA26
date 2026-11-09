@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.ai_project_singapore"
+    namespace = "com.phishguard.ai"
     compileSdk = 36
 
     buildFeatures {
@@ -15,7 +15,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.ai_project_singapore"
+        applicationId = "com.phishguard.ai"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
