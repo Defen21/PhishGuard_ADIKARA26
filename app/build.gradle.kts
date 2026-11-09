@@ -1,5 +1,9 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    id("com.google.devtools.ksp")
+    // Firebase
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -30,6 +34,15 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    
+    kotlinOptions {
+        jvmTarget = "11"
+    }
+
+    // TFLite: jangan compress file .tflite
+    aaptOptions {
+        noCompress("tflite")
+    }
 }
 
 dependencies {
@@ -41,7 +54,7 @@ dependencies {
 
     // Room Database (local phishing DB)
     implementation("androidx.room:room-runtime:2.6.1")
-    annotationProcessor("androidx.room:room-compiler:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
 
     // Gson (JSON parsing untuk server sync)
     implementation("com.google.code.gson:gson:2.10.1")
@@ -49,11 +62,19 @@ dependencies {
     // RecyclerView (untuk detected apps list)
     implementation("androidx.recyclerview:recyclerview:1.3.2")
 
-    // TensorFlow Lite — OPSIONAL, uncomment saat tim AI siap
-    // implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    // implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    // TensorFlow Lite — NLP Classifier untuk SMS phishing (framework saja, tanpa support lib)
+    // Model inference via Interpreter langsung dari assets/
+    implementation("org.tensorflow:tensorflow-lite:2.13.0") {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
+    }
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+
+    // ── Firebase (Cloud Phishing DB + Community Crowd) ──────────────────
+    // BoM = semua versi Firebase otomatis sinkron
+    implementation(platform("com.google.firebase:firebase-bom:33.9.0"))
+    implementation("com.google.firebase:firebase-firestore-ktx")  // Cloud phishing/official URL DB
+    implementation("com.google.firebase:firebase-analytics-ktx") // Optional analytics
 }

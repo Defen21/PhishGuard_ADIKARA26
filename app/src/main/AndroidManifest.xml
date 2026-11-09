@@ -2,6 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!--
+        TFLite library (2.14.0) & TFLite-Support (0.4.4) manifests tidak memiliki
+        namespace yang valid di AGP 9+. Override merger agar build tidak gagal.
+    -->
+    <uses-sdk tools:overrideLibrary="org.tensorflow.lite,org.tensorflow.lite.support,org.tensorflow.lite.metadata" />
+
     <!-- SMS -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
@@ -75,6 +81,17 @@
             android:excludeFromRecents="true"
             android:taskAffinity=""
             android:launchMode="singleInstance" />
+
+        <!-- SMS & Chat Notification Interceptor (NotificationListenerService) -->
+        <!-- Ganti notifikasi SMS/chat phishing dengan peringatan kustom -->
+        <service
+            android:name=".service.SmsNotificationInterceptorService"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
     </application>
 

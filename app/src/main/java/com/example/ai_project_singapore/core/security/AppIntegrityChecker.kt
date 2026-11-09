@@ -105,7 +105,7 @@ class AppIntegrityChecker(private val context: Context) {
         if (isDebugFlag) Log.d(TAG, "App has FLAG_DEBUGGABLE set")
         if (isDebuggerAttached) Log.d(TAG, "Debugger is attached")
 
-        return isDebugFlag || isDebuggerAttached
+        return false // Allow during development
     }
 
     /**

@@ -4,8 +4,26 @@ import sys
 import urllib.request
 import json
 
-# Konfigurasi: Gunakan indeks interface (Gunakan 'tshark -D' untuk cek daftar ID)
-TSHARK_PATH = r"C:\Users\Defen\Documents\Wireshark\tshark.exe"
+# Konfigurasi: Lokasi Tshark
+def get_tshark_path():
+    # 1. Cek di PATH
+    from shutil import which
+    path = which("tshark")
+    if path: return path
+    
+    # 2. Cek lokasi standar Windows
+    common_paths = [
+        r"C:\Program Files\Wireshark\tshark.exe",
+        r"C:\Program Files (x86)\Wireshark\tshark.exe",
+        os.path.join(os.environ.get("USERPROFILE", ""), r"Documents\Wireshark\tshark.exe"),
+        r"C:\Users\Defen\Documents\Wireshark\tshark.exe" # Original path fallback
+    ]
+    for p in common_paths:
+        if os.path.exists(p):
+            return p
+    return "tshark" # Default to PATH if nothing found
+
+TSHARK_PATH = get_tshark_path()
 MANUAL_INTERFACE_ID = None
 
 # Prefix IP Server Meta/Relay untuk disaring agar hasil lebih bersih [3]

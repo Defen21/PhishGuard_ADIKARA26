@@ -15,7 +15,7 @@ import androidx.room.RoomDatabase
  */
 @Database(
     entities = [PhishingUrl::class, PhishingNumber::class, OfficialUrl::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class PhishingDatabase : RoomDatabase() {

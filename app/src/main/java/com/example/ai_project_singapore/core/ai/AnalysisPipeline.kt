@@ -5,6 +5,26 @@ import android.util.Log
 import com.example.ai_project_singapore.data.db.PhishingDatabase
 import kotlin.concurrent.thread
 
+// ──────────────────────────────────────────────────────────────────────
+// 3-Layer Message Phishing Pipeline Result
+// Layer 1: URL  |  Layer 2: Contact/Number  |  Layer 3: AI NLP Content
+// ──────────────────────────────────────────────────────────────────────
+enum class ThreatLayer { URL, NUMBER, CONTENT }
+
+data class LayeredResult(
+    val isThreat: Boolean,
+    val layer: ThreatLayer? = null,
+    val detectedValue: String = "",   // URL atau Nomor yang terdeteksi
+    val reason: String = "",
+    val confidence: Float = 0f
+) {
+    companion object {
+        fun safe() = LayeredResult(false)
+        fun threat(layer: ThreatLayer, value: String, reason: String, confidence: Float = 1.0f) =
+            LayeredResult(true, layer, value, reason, confidence)
+    }
+}
+
 /**
  * Orchestrator untuk analisis phishing.
  *
@@ -21,9 +41,9 @@ class AnalysisPipeline(private val context: Context) {
 
     private val TAG = "AnalysisPipeline"
 
-    // AI Providers — default = rule-based, tim AI bisa ganti kapan saja
-    var urlProvider: AIModelProvider = DefaultRuleProvider()
-    var messageProvider: AIModelProvider = DefaultRuleProvider()
+    // AI Providers — TFLite NLP untuk SMS, rule-based LSTM untuk URL
+    var urlProvider: AIModelProvider = LstmUrlProvider()
+    var messageProvider: AIModelProvider = TFLiteMessageProvider()  // NLP Classifier
     var voiceProvider: AIModelProvider = DefaultRuleProvider()
 
     // Database instance
@@ -194,8 +214,139 @@ class AnalysisPipeline(private val context: Context) {
         }
     }
 
+    /**
+     * ═══════════════════════════════════════════════════════════════
+     * 3-LAYER MESSAGE PHISHING PIPELINE (sesuai arsitektur)
+     * ═══════════════════════════════════════════════════════════════
+     *
+     * Layer 1 — URL Check:
+     *   Ekstrak semua URL dari pesan → cek phishing URL DB → cek AI URL
+     *   Jika threat → callback (HITL overlay)
+     *
+     * Layer 2 — Sender / Number Check:
+     *   Nomor pengirim → cek Database phishing number
+     *   Jika threat → callback (HITL overlay)
+     *
+     * Layer 3 — AI NLP Content Analysis:
+     *   Full teks pesan ke TFLite message classifier
+     *   Jika threat → callback (HITL overlay)
+     *
+     * Jika semua layer aman → callback LayeredResult.safe()
+     */
+    fun analyzeMessageLayers(
+        message: String,
+        sender: String = "",
+        source: String,
+        callback: (LayeredResult) -> Unit
+    ) {
+        thread {
+            try {
+                Log.d(TAG, "=== 3-Layer Message Analysis ===")
+                Log.d(TAG, "Source: $source | Sender: $sender | Msg: ${message.take(60)}...")
+
+                // ─────────────────────────────────────────────────────
+                // LAYER 1: URL CHECK
+                // ─────────────────────────────────────────────────────
+                val urls = extractUrls(message)
+                Log.d(TAG, "Layer 1: Found URLs = $urls")
+
+                for (url in urls) {
+                    // Cek local phishing URL DB
+                    val knownPhishing = database.phishingUrlDao().findByUrl(url)
+                    if (knownPhishing != null) {
+                        Log.w(TAG, "Layer 1 🔴 URL in local DB: $url")
+                        callback(LayeredResult.threat(
+                            ThreatLayer.URL, url,
+                            "URL terdaftar sebagai phishing: ${knownPhishing.reason}"
+                        ))
+                        return@thread
+                    }
+
+                    // Cek official URL DB (skip jika official)
+                    val domain = extractDomain(url)
+                    val knownOfficial = database.officialUrlDao().findByDomain(domain)
+                    if (knownOfficial != null) {
+                        Log.d(TAG, "Layer 1 ✅ Official URL: $domain")
+                        continue // URL resmi, skip ke URL berikutnya
+                    }
+
+                    // Analisis AI URL (LstmUrlProvider)
+                    val urlInput = AnalysisInput(InputType.URL, url, source)
+                    val urlResult = urlProvider.analyze(urlInput)
+                    if (urlResult.isThreat) {
+                        Log.w(TAG, "Layer 1 🔴 URL AI threat: $url | ${urlResult.reason}")
+                        callback(LayeredResult.threat(
+                            ThreatLayer.URL, url, urlResult.reason, urlResult.confidence
+                        ))
+                        return@thread
+                    }
+                }
+                Log.d(TAG, "Layer 1 ✅ Semua URL aman atau tidak ada URL.")
+
+                // ─────────────────────────────────────────────────────
+                // LAYER 2: SENDER / NOMOR CHECK
+                // ─────────────────────────────────────────────────────
+                if (sender.isNotBlank()) {
+                    val phoneNumber = extractPhoneNumber(sender)
+                    Log.d(TAG, "Layer 2: Sender='$sender' | Phone='$phoneNumber'")
+
+                    if (phoneNumber.isNotBlank()) {
+                        val knownBadNumber = database.phishingNumberDao().findByNumber(phoneNumber)
+                        if (knownBadNumber != null) {
+                            Log.w(TAG, "Layer 2 🔴 Bad number: $phoneNumber")
+                            callback(LayeredResult.threat(
+                                ThreatLayer.NUMBER, phoneNumber,
+                                "Nomor terdata sebagai penipu: ${knownBadNumber.reason}"
+                            ))
+                            return@thread
+                        }
+                    }
+                }
+                Log.d(TAG, "Layer 2 ✅ Sender aman.")
+
+                // ─────────────────────────────────────────────────────
+                // LAYER 3: AI NLP CONTENT ANALYSIS
+                // ─────────────────────────────────────────────────────
+                Log.d(TAG, "Layer 3: Running TFLite NLP...")
+                val msgInput = AnalysisInput(InputType.MESSAGE, message, source)
+                val nlpResult = messageProvider.analyze(msgInput)
+
+                if (nlpResult.isThreat) {
+                    Log.w(TAG, "Layer 3 🔴 NLP threat: ${nlpResult.reason}")
+                    callback(LayeredResult.threat(
+                        ThreatLayer.CONTENT, message.take(80),
+                        nlpResult.reason, nlpResult.confidence
+                    ))
+                } else {
+                    Log.d(TAG, "Layer 3 ✅ Pesan aman.")
+                    callback(LayeredResult.safe())
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "analyzeMessageLayers error", e)
+                callback(LayeredResult.safe())
+            }
+        }
+    }
+
+    /**
+     * Ekstrak nomor telepon dari string sender.
+     * Mendukung format: +62857xxx, 08571xxx, "Farhan Telyu 62857xxx"
+     */
+    private fun extractPhoneNumber(text: String): String {
+        val phoneRegex = Regex("[+]?[0-9]{8,15}")
+        return phoneRegex.find(text)?.value ?: ""
+    }
+
+    /**
+     * Ekstrak URL dari teks — mendukung URL dengan dan tanpa protokol.
+     * Menangkap: https://bit.ly/... MAUPUN bca.100.juta.vercel.app
+     */
     private fun extractUrls(text: String): List<String> {
-        val urlPattern = Regex("(https?://[\\w\\-._~:/?#\\[\\]@!\$&'()*+,;=%]+)", RegexOption.IGNORE_CASE)
-        return urlPattern.findAll(text).map { it.value }.toList()
+        val urlPattern = Regex(
+            """(https?://[\w\-.~:/?#\[\]@!${'$'}&'()*+,;=%]+|[\w\-]+\.(?:app|com|co\.id|net|org|id|info|xyz|biz|io|web\.id|vercel\.app|netlify\.app|github\.io)(?:/[\w\-.~:/?#\[\]@!${'$'}&'()*+,;=%]*)?)""",
+            RegexOption.IGNORE_CASE
+        )
+        return urlPattern.findAll(text).map { it.value }.distinct().toList()
     }
 }

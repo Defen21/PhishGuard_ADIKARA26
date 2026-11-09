@@ -4,7 +4,9 @@ import android.os.Bundle
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
+import com.example.ai_project_singapore.core.network.FirebaseSyncManager
 import com.example.ai_project_singapore.core.security.AppIntegrityChecker
+import com.example.ai_project_singapore.data.db.DatabaseSeeder
 import com.example.ai_project_singapore.ui.ActivityFragment
 import com.example.ai_project_singapore.ui.DashboardFragment
 import com.example.ai_project_singapore.ui.ProtectionFragment
@@ -32,6 +34,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         setContentView(R.layout.activity_main)
+
+        // Seed database domain resmi bank Indonesia
+        DatabaseSeeder.seedIfNeeded(this)
+
+        // 🔥 BULK UPLOAD EXCEL URL KE FIREBASE
+        // Fungsi ini akan upload ribuan URL dari official_data.txt ke Firestore.
+        // Uncomment baris di bawah ini sekali saja untuk mengupload, lalu comment lagi.
+        // FirebaseSyncManager(this).bulkUploadOfficialUrlsFromAssets()
 
         // Add all fragments, hide all except dashboard
         supportFragmentManager.beginTransaction().apply {

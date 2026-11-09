@@ -49,13 +49,48 @@ class ProtectionFragment : Fragment() {
         switchChrome.isChecked = prefs.monitorChrome
         switchCallProtection.isChecked = prefs.callProtectionEnabled
 
+        // Start service if enabled on startup
+        if (prefs.callProtectionEnabled) {
+            startCallService()
+        }
+
         // Save on change
         switchWhatsapp.setOnCheckedChangeListener { _, checked -> prefs.monitorWhatsApp = checked }
         switchTelegram.setOnCheckedChangeListener { _, checked -> prefs.monitorTelegram = checked }
         switchFacebook.setOnCheckedChangeListener { _, checked -> prefs.monitorFacebook = checked }
         switchInstagram.setOnCheckedChangeListener { _, checked -> prefs.monitorInstagram = checked }
         switchChrome.setOnCheckedChangeListener { _, checked -> prefs.monitorChrome = checked }
-        switchCallProtection.setOnCheckedChangeListener { _, checked -> prefs.callProtectionEnabled = checked }
+        
+        switchCallProtection.setOnCheckedChangeListener { _, checked ->
+            prefs.callProtectionEnabled = checked
+            if (checked) {
+                startCallService()
+            } else {
+                stopCallService()
+            }
+        }
+    }
+
+    private fun startCallService() {
+        try {
+            val intent = Intent(requireContext(), com.example.ai_project_singapore.service.CallMonitorService::class.java)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                requireContext().startForegroundService(intent)
+            } else {
+                requireContext().startService(intent)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ProtectionFragment", "Error starting CallMonitorService", e)
+        }
+    }
+
+    private fun stopCallService() {
+        try {
+            val intent = Intent(requireContext(), com.example.ai_project_singapore.service.CallMonitorService::class.java)
+            requireContext().stopService(intent)
+        } catch (e: Exception) {
+            android.util.Log.e("ProtectionFragment", "Error stopping CallMonitorService", e)
+        }
     }
 
     /**

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "976890147646",
+    "project_id": "phishguard-a8447",
+    "storage_bucket": "phishguard-a8447.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:976890147646:android:160235940576bd57fbb26f",
+        "android_client_info": {
+          "package_name": "com.example.ai_project_singapore"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBSfFZSq36NMBc_UcyvVyEaFG41MQ5rfj0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -16,10 +16,11 @@ data class PhishingUrl(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
     val url: String,
-    val domain: String,
+    val domain: String = "",
     val reason: String,
-    val source: String,         // "local", "server", "user_report"
+    val source: String = "local",   // "local", "server", "user_report"
     val confidence: Float = 1.0f,
+    val isCommunityReported: Boolean = false,  // true = dari Firebase komunitas
     val addedAt: Long = System.currentTimeMillis()
 )
 

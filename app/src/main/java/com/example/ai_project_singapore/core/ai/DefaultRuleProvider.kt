@@ -34,10 +34,11 @@ class DefaultRuleProvider : AIModelProvider {
 
     // Message suspicious patterns
     private val suspiciousMessagePatterns = listOf(
-        "http://", "bit.ly", "tinyurl", "klik link", "click here",
-        "verifikasi", "hadiah", "menang undian", "segera transfer",
-        "login sekarang", "akun anda", "rekening anda", "blokir",
-        "limit exceeded", "verify your", "claim your prize"
+        "surat tilang", "paket anda", "kurir J&T", "kurir sicepat", "undangan pernikahan",
+        "tagihan bpln", "tagihan bpjs", "klik link ini", "verifikasi data", "pemblokiran rekening",
+        "hadiah dari bca", "hadiah dari bri", "pemenang undian", "klaim hadiah", 
+        "segera transfer", "login sekarang", "rekening anda dibekukan",
+        "apk surat", "cek resi", "unduh aplikasi", "bantuan sosial"
     )
 
     // Voice fraud keywords

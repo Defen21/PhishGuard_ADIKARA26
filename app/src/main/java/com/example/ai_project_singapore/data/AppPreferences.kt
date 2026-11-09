@@ -77,11 +77,25 @@ class AppPreferences(context: Context) {
      */
     fun getMonitoredPackages(): Set<String> {
         val packages = mutableSetOf<String>()
-        if (monitorChrome) packages.add("com.android.chrome")
+        // 1. Browsers (force some major ones based on toggle, though we can just force them)
+        if (monitorChrome) {
+            packages.add("com.android.chrome")
+            packages.add("com.sec.android.app.sbrowser") // Samsung Internet
+            packages.add("org.mozilla.firefox")
+            packages.add("com.opera.browser")
+            packages.add("com.microsoft.emmx") // Edge
+        }
+        
+        // 2. Default SMS apps (Always ON as per user request)
+        packages.add("com.google.android.apps.messaging")
+        packages.add("com.samsung.android.messaging")
+
+        // 3. Social / Chat apps (Toggled)
         if (monitorWhatsApp) packages.add("com.whatsapp")
         if (monitorTelegram) packages.add("org.telegram.messenger")
         if (monitorFacebook) packages.add("com.facebook.orca")
         if (monitorInstagram) packages.add("com.instagram.android")
+        
         // Add custom monitored apps from auto-detect
         packages.addAll(getCustomMonitoredApps())
         return packages
