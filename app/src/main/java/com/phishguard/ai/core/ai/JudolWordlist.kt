@@ -74,7 +74,10 @@ class JudolWordlist {
             Entry(listOf("deposit", "depo", "wd", "saldo", "referral", "affiliate", "komisi", "cashback"), 2),
             Entry(listOf("jackpot", "payout", "keluaran", "pengeluaran", "result", "tembus"), 2),
             Entry(listOf("bonus", "member baru", "gratis", "daftar sekarang", "login sekarang", "situs"), 3),
-            Entry(listOf("d", "toda", "pulsa", "diamond", "koin"), 1)
+            // "d" satu huruf dibuang: ia mencocoki hampir semua teks dan
+            // menyumbang skor palsu, sehingga halaman judi tampak sudah
+            // memenuhi ambang padahal buktinya cuma satu istilah asli.
+            Entry(listOf("toto", "pulsa", "diamond", "koin"), 1)
         )
 
         /** Scan sebuah teks (URL penuh atau konten halaman). */
@@ -95,7 +98,7 @@ class JudolWordlist {
                 }
             }
             if (found.isEmpty()) return Hit(emptyList(), 0, "")
-            return Hit(found.toList(), score, found.take(10).joinToString(","))
+            return Hit(found.toList(), score, found.take(10).joinToString(", "))
         }
 
         /** Ambang: halaman/domain judol nyata biasanya >= 6 & >=2 term. */

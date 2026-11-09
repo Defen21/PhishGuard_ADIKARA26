@@ -530,7 +530,11 @@ class PhishGuardService : AccessibilityService() {
      * sinyal konten untuk lapisan wordlist/AI. Dibatasi kapasitas agar tidak
      * memakan memori & tidak mem-bocorkan seluruh isi halaman.
      */
-    private fun collectVisiblePageText(expectedPackage: String, maxChars: Int = 1500): String {
+    // 1500 karakter terlalu sempit untuk menilai satu halaman: pada situs
+    // judol nyata hanya satu istilah yang tertangkap sehingga skornya tak
+    // pernah cukup. 6000 masih ringan (beberapa KB) tapi memuat cukup badan
+    // halaman untuk menilai isinya.
+    private fun collectVisiblePageText(expectedPackage: String, maxChars: Int = 6000): String {
         return try {
             val root = rootInActiveWindow ?: return ""
             // Jendela aktif WAJIB masih milik peramban yang sedang dinilai.
