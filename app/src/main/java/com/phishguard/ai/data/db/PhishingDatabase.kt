@@ -14,10 +14,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * - PhishingUrl: Database URL yang diketahui phishing
  * - PhishingNumber: Database nomor telepon penipu
  * - OfficialUrl: Database domain resmi (whitelist)
+ * - ThreatLocation: Ancaman terkonfirmasi + perkiraan lokasinya (opt-in)
  */
 @Database(
-    entities = [PhishingUrl::class, PhishingNumber::class, OfficialUrl::class],
-    version = 2,
+    entities = [PhishingUrl::class, PhishingNumber::class, OfficialUrl::class,
+        ThreatLocation::class],
+    version = 3,
     exportSchema = false
 )
 abstract class PhishingDatabase : RoomDatabase() {
@@ -25,6 +27,7 @@ abstract class PhishingDatabase : RoomDatabase() {
     abstract fun phishingUrlDao(): PhishingUrlDao
     abstract fun phishingNumberDao(): PhishingNumberDao
     abstract fun officialUrlDao(): OfficialUrlDao
+    abstract fun threatLocationDao(): ThreatLocationDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {

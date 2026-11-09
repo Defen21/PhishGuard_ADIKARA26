@@ -13,6 +13,7 @@ import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import com.phishguard.ai.PhishGuardService
 import com.phishguard.ai.R
+import com.phishguard.ai.core.geo.ThreatLocationTagger
 import com.phishguard.ai.core.network.FirebaseSyncManager
 import com.phishguard.ai.core.tts.TextToSpeechEngine
 import com.phishguard.ai.data.AppPreferences
@@ -145,6 +146,13 @@ class WarningActivity : AppCompatActivity() {
                         putExtra("phone_number", phoneNumber)
                     }
                     logActivity("Blocked SMS from: $phoneNumber", "SMS", "PHISHING", countAsBlocked = true)
+                    ThreatLocationTagger.record(
+                        context = applicationContext,
+                        crimeType = "SCAM_MESSAGE",
+                        severity = confidence,
+                        source = source.ifBlank { "SMS" },
+                        label = phoneNumber
+                    )
                     Toast.makeText(this, getString(R.string.risk_number_blocked, phoneNumber), Toast.LENGTH_SHORT).show()
                     finish()
                 }
@@ -219,6 +227,16 @@ class WarningActivity : AppCompatActivity() {
 
             // 3. Bagikan ke database komunitas agar pengguna lain ikut terlindungi
             uploadToFirebase(url, reason, confidence)
+
+            // 4. Petakan kejadiannya. Tidak melakukan apa-apa kecuali
+            //    pengguna menyalakan Peta Pola Ancaman sendiri.
+            ThreatLocationTagger.record(
+                context = applicationContext,
+                crimeType = if (reason.contains("judi", ignoreCase = true)) "JUDOL" else "PHISHING",
+                severity = confidence,
+                source = source.ifBlank { "Browser" },
+                label = hostOf(url)
+            )
 
             // 4. Tutup; service yang menavigasi kembali satu halaman
             finish()

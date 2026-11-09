@@ -95,6 +95,11 @@ dependencies {
     // Gson (JSON parsing untuk server sync)
     implementation("com.google.code.gson:gson:2.10.1")
 
+    // Peta pola ancaman. osmdroid dipilih ketimbang Google Maps karena
+    // tidak butuh API key — satu langkah provisioning yang bisa gagal
+    // diam-diam di mesin orang lain, untuk fitur yang opsional.
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
+
     // RecyclerView (untuk detected apps list)
     implementation("androidx.recyclerview:recyclerview:1.3.2")
 
@@ -105,6 +110,11 @@ dependencies {
     }
 
     testImplementation(libs.junit)
+    // org.json di JVM unit test hanyalah stub kosong (semua method
+    // mengembalikan null karena isReturnDefaultValues). Implementasi asli
+    // ini dipakai HANYA saat test — di perangkat, org.json bawaan Android
+    // yang berjalan.
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 

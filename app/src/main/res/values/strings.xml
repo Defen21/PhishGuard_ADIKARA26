@@ -101,4 +101,18 @@
     <!-- Integrity -->
     <string name="integrity_failed_title">Keamanan Terancam</string>
     <string name="integrity_failed_message">Aplikasi telah dimodifikasi dan tidak aman untuk digunakan. Silakan install ulang dari sumber resmi.</string>
+
+    <!-- Peta pola ancaman -->
+    <string name="map_title">Peta Pola Ancaman</string>
+    <string name="map_summary">%1$d kejadian · %2$d titik rawan</string>
+    <string name="map_empty">Belum ada kejadian yang terpetakan.\n\nAncaman akan muncul di sini setelah Anda memblokirnya, selama Peta Pola Ancaman aktif di Pengaturan.</string>
+    <string name="map_export">Ekspor GeoJSON</string>
+    <string name="map_all_time">Semua waktu</string>
+    <string name="map_setting">Peta Pola Ancaman</string>
+    <string name="map_setting_desc">Simpan perkiraan lokasi setiap ancaman yang Anda blokir, untuk melihat titik rawan. Lokasi dibulatkan ~1 km dan tidak pernah dilacak terus-menerus.</string>
+    <string name="map_open">Buka peta</string>
+    <string name="map_clear">Hapus semua data lokasi</string>
+    <string name="map_cleared">Data lokasi dihapus.</string>
+    <string name="map_need_permission">Butuh izin lokasi perkiraan untuk memetakan ancaman.</string>
+    <string name="map_exported">GeoJSON disalin ke papan klip (%1$d kejadian).</string>
 </resources>

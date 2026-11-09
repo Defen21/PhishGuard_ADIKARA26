@@ -26,6 +26,7 @@ tidak lagi melindungi siapa pun.
 - [Membangun proyek](#membangun-proyek)
 - [Membuat APK rilis](#membuat-apk-rilis)
 - [Menyiapkan aplikasi di perangkat](#menyiapkan-aplikasi-di-perangkat)
+- [Peta pola ancaman](#peta-pola-ancaman)
 - [Catatan untuk pengembang](#catatan-untuk-pengembang)
 - [Struktur proyek](#struktur-proyek)
 - [Memperbarui blocklist](#memperbarui-blocklist)
@@ -390,6 +391,50 @@ pertama dibuka.
 > dibatasi ke paket aplikasi sendiri agar tidak terbaca aplikasi lain.
 
 ---
+
+## Peta pola ancaman
+
+Memetakan ancaman yang Anda blokir ke tiga dimensi pola — spasial, temporal,
+dan kategorikal — mengikuti
+[spesifikasi pemetaan](docs/spesifikasi-pemetaan-pola.md).
+
+| Dimensi | Wujudnya di aplikasi |
+|---|---|
+| **Spasial** | Titik rawan hasil pengelompokan grid, lingkaran berskala intensitas, gradasi hijau→merah |
+| **Temporal** | Filter rentang waktu: dini hari, pagi, siang, malam |
+| **Kategorikal** | Filter jenis: phishing, judi online, pesan penipuan, panggilan penipuan |
+
+Ekspor **GeoJSON** tersedia di layar peta, memakai skema persis seperti di
+spesifikasi (`FeatureCollection` → `Feature` → `properties` berisi `id`,
+`type`, `time_of_occurrence`, `risk_weight`), sehingga bisa langsung
+dikonsumsi dasbor web berbasis Leaflet atau Mapbox.
+
+### Batasan privasi yang disengaja
+
+Aplikasi ini ada untuk melindungi data pengguna, jadi fitur yang merekam
+lokasi dibangun dengan tiga pagar:
+
+1. **Opt-in, mati secara bawaan.** Tidak ada koordinat yang tersimpan
+   sampai pengguna menyalakannya sendiri di Pengaturan dan memberi izin.
+2. **Kasar, tidak pernah presisi.** Hanya `ACCESS_COARSE_LOCATION` yang
+   diminta, dan koordinatnya dibulatkan lagi ke ~1,1 km sebelum menyentuh
+   disk. Cukup untuk titik rawan tingkat kelurahan, tidak cukup untuk
+   menunjukkan rumah seseorang.
+3. **Tidak melacak.** Hanya membaca lokasi terakhir yang sudah diketahui
+   sistem, saat ancaman dikonfirmasi — bukan saat memindai. Tidak
+   menyalakan GPS, tidak berlangganan pembaruan lokasi.
+
+Tombol **Hapus semua data lokasi** ada di Pengaturan, di bawah togglenya.
+
+Pengelompokan memakai grid, bukan K-Means atau DBSCAN seperti disebut di
+spesifikasi. Alasannya: koordinat sudah dibulatkan demi privasi, jadi
+presisi clustering canggih akan hilang percuma — dan grid berjalan seketika
+tanpa pustaka tambahan. Ditandai `ponytail:` di kode bila nanti presisinya
+dinaikkan.
+
+Peta memakai **osmdroid** (OpenStreetMap), bukan Google Maps, agar tidak
+perlu API key — satu langkah provisioning yang bisa gagal diam-diam di
+mesin orang lain, untuk fitur yang sifatnya opsional.
 
 ## Catatan untuk pengembang
 
