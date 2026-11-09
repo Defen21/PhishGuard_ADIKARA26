@@ -13,4 +13,11 @@
         <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
         <!-- Customize your theme here. -->
     </style>
+
+    <!-- Warning Screen Theme -->
+    <style name="Theme.Warning" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/error_dark</item>
+        <item name="android:statusBarColor">@color/error_dark</item>
+        <item name="android:navigationBarColor">@color/error_dark</item>
+    </style>
 </resources>

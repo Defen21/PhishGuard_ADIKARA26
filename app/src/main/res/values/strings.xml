@@ -57,4 +57,18 @@
     <string name="setting_version">Version 1.0</string>
     <string name="btn_enable">Enable Protection</string>
     <string name="btn_manage">Manage Permissions</string>
+
+    <!-- Warning Screen -->
+    <string name="warning_title">AWAS BERBAHAYA!</string>
+    <string name="warning_subtitle">Akses Diblokir: Terindikasi Penipuan</string>
+    <string name="warning_btn_close">Tutup Peringatan (Keluar dari Situs)</string>
+    <string name="warning_url_label">URL yang diblokir:</string>
+
+    <!-- Detected Apps -->
+    <string name="detected_apps_header">Ditemukan di HP Anda</string>
+    <string name="detected_apps_desc">Aplikasi tambahan yang bisa dimonitor</string>
+
+    <!-- Integrity -->
+    <string name="integrity_failed_title">Keamanan Terancam</string>
+    <string name="integrity_failed_message">Aplikasi telah dimodifikasi dan tidak aman untuk digunakan. Silakan install ulang dari sumber resmi.</string>
 </resources>

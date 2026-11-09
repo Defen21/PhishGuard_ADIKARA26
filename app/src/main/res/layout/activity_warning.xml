@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_warning_gradient">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="32dp">
+
+        <!-- Warning Icon -->
+        <FrameLayout
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:layout_marginBottom="24dp">
+
+            <ImageView
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:layout_gravity="center"
+                android:src="@android:drawable/ic_dialog_alert"
+                android:tint="#FFFFFF"
+                android:contentDescription="Warning" />
+        </FrameLayout>
+
+        <!-- Title -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/warning_title"
+            android:textColor="#FFFFFF"
+            android:textSize="28sp"
+            android:fontFamily="sans-serif-black"
+            android:textStyle="bold"
+            android:gravity="center" />
+
+        <!-- Subtitle / Reason -->
+        <TextView
+            android:id="@+id/tvWarningReason"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/warning_subtitle"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:alpha="0.95"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center" />
+
+        <!-- Blocked URL -->
+        <TextView
+            android:id="@+id/tvWarningUrl"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="#33000000"
+            android:padding="16dp"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:alpha="0.85"
+            android:fontFamily="monospace"
+            android:gravity="center"
+            android:maxLines="3"
+            android:ellipsize="middle" />
+
+        <!-- Spacer -->
+        <View
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- Close Button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCloseWarning"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="@string/warning_btn_close"
+            android:textAllCaps="false"
+            android:textColor="@color/error_dark"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:backgroundTint="#FFFFFF"
+            android:layout_marginBottom="32dp"
+            app:cornerRadius="28dp"
+            xmlns:app="http://schemas.android.com/apk/res-auto" />
+
+    </LinearLayout>
+</FrameLayout>
