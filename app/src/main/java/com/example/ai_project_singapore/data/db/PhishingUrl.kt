@@ -47,4 +47,10 @@ interface PhishingUrlDao {
 
     @Query("DELETE FROM phishing_urls")
     fun deleteAll()
+    
+    @Query("DELETE FROM phishing_urls WHERE url = :url")
+    fun deleteByUrl(url: String)
+    
+    @Query("SELECT * FROM phishing_urls WHERE source = :source")
+    fun getBySource(source: String): List<PhishingUrl>
 }

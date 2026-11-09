@@ -5,142 +5,283 @@ import android.util.Log
 import com.example.ai_project_singapore.data.db.PhishingDatabase
 import com.example.ai_project_singapore.data.db.PhishingUrl
 import com.example.ai_project_singapore.data.db.PhishingNumber
+import com.google.gson.Gson
+import com.google.gson.JsonParser
 import kotlin.concurrent.thread
 
 /**
- * Server Sync Manager untuk komunikasi dengan n8n workflow backend.
- *
- * Mengatur sinkronisasi database lokal dengan server:
- * - Sync phishing URLs dan numbers
- * - Report ancaman baru dari user
- * - Check URL/number terhadap server database
- *
- * TODO (TIM NETWORK):
- * 1. Ganti webhookBaseUrl dengan URL n8n instance yang sesungguhnya
- * 2. Implementasikan parsing response JSON dari n8n
- * 3. Tambahkan authentication jika diperlukan
+ * Real Server Sync Manager
+ * 
+ * Sinkronisasi data phishing dengan:
+ * 1. Firebase Firestore (primary, already implemented via FirebaseSyncManager)
+ * 2. Custom API endpoint (optional, untuk n8n workflow atau custom backend)
+ * 3. PhishTank API (public phishing database)
  */
 class ServerSyncManager(private val context: Context) {
 
     private val TAG = "ServerSyncManager"
     private val apiClient = ApiClient()
+    private val gson = Gson()
 
-    // Base URL untuk n8n webhook — configurable
-    var webhookBaseUrl: String = "https://your-n8n-instance.com/webhook"
-
-    // Database instance
+    // Configurable endpoints
+    var customApiBaseUrl: String = ""  // Set via settings if needed
+    private val phishTankApiUrl = "https://data.phishtank.com/data/online-valid.json"
+    
     private val database: PhishingDatabase by lazy {
         PhishingDatabase.getInstance(context)
     }
 
-    /**
-     * Sync phishing URL database dari server ke local.
-     */
-    fun syncPhishingUrls(onComplete: (Boolean) -> Unit) {
-        Log.d(TAG, "Syncing phishing URLs from server...")
-
-        // TODO: Implement actual server sync
-        // apiClient.get("$webhookBaseUrl/phishing-urls") { success, response ->
-        //     if (success && response != null) {
-        //         val urls = parseUrlsFromJson(response)
-        //         thread { database.phishingUrlDao().insertAll(urls) }
-        //         onComplete(true)
-        //     } else {
-        //         onComplete(false)
-        //     }
-        // }
-
-        onComplete(false) // Placeholder — server belum ada
-    }
-
-    /**
-     * Sync phishing number database dari server ke local.
-     */
-    fun syncPhishingNumbers(onComplete: (Boolean) -> Unit) {
-        Log.d(TAG, "Syncing phishing numbers from server...")
-
-        // TODO: Implement actual server sync
-        onComplete(false) // Placeholder
-    }
-
-    /**
-     * Report URL phishing baru ke server (setelah Human-in-the-Loop confirm).
-     */
-    fun reportPhishingUrl(url: String, source: String, reason: String) {
-        Log.d(TAG, "Reporting phishing URL to server: $url")
-
-        // Simpan ke local DB dulu
-        thread {
-            val domain = url.removePrefix("http://").removePrefix("https://")
-                .removePrefix("www.").split("/").firstOrNull() ?: url
-            database.phishingUrlDao().insert(
-                PhishingUrl(
-                    url = url,
-                    domain = domain,
-                    reason = reason,
-                    source = "user_report"
-                )
-            )
-        }
-
-        // TODO: Kirim ke server via n8n webhook
-        // val json = """{"url":"$url","source":"$source","reason":"$reason"}"""
-        // apiClient.post("$webhookBaseUrl/report-url", json) { success, _ ->
-        //     Log.d(TAG, "Report URL result: $success")
-        // }
-    }
-
-    /**
-     * Report nomor penipuan baru ke server.
-     */
-    fun reportPhishingNumber(number: String, source: String, reason: String) {
-        Log.d(TAG, "Reporting phishing number to server: $number")
-
-        // Simpan ke local DB dulu
-        thread {
-            database.phishingNumberDao().insert(
-                PhishingNumber(
-                    number = number,
-                    reason = reason,
-                    source = "user_report"
-                )
-            )
-        }
-
-        // TODO: Kirim ke server via n8n webhook
-    }
-
-    data class ServerCheckResult(
-        val found: Boolean,
-        val isThreat: Boolean,
-        val reason: String
+    data class PhishTankEntry(
+        val url: String,
+        val phish_id: String,
+        val phish_detail_url: String,
+        val submission_time: String,
+        val verified: String,
+        val verification_time: String,
+        val target: String
     )
 
     /**
-     * Check URL terhadap server database.
+     * Sync phishing URLs dari PhishTank (public database)
+     * Rate limit: 1 hour antara sync
      */
-    fun checkUrlOnServer(url: String, callback: (ServerCheckResult) -> Unit) {
-        Log.d(TAG, "Checking URL on server: $url")
-
-        // TODO: Implement actual server check
-        // apiClient.get("$webhookBaseUrl/check-url?url=$url") { success, response ->
-        //     if (success && response != null) {
-        //         callback(parseServerCheckResult(response))
-        //     } else {
-        //         callback(ServerCheckResult(false, false, "Server unavailable"))
-        //     }
-        // }
-
-        callback(ServerCheckResult(false, false, "Server not configured")) // Placeholder
+    fun syncFromPhishTank(onComplete: (success: Boolean, count: Int) -> Unit) {
+        Log.d(TAG, "Syncing from PhishTank...")
+        
+        val lastSync = getLastSyncTime("phishtank")
+        val oneHourAgo = System.currentTimeMillis() - (60 * 60 * 1000)
+        
+        if (lastSync > oneHourAgo) {
+            Log.d(TAG, "PhishTank sync skipped (synced recently)")
+            onComplete(false, 0)
+            return
+        }
+        
+        apiClient.get(phishTankApiUrl) { success, response ->
+            if (success && response != null) {
+                thread {
+                    try {
+                        // Parse JSON response
+                        val jsonArray = JsonParser.parseString(response).asJsonArray
+                        var insertCount = 0
+                        
+                        // Limit to first 1000 entries to avoid DB bloat
+                        jsonArray.take(1000).forEach { element ->
+                            try {
+                                val entry = gson.fromJson(element, PhishTankEntry::class.java)
+                                
+                                // Extract domain
+                                val domain = entry.url.removePrefix("http://")
+                                    .removePrefix("https://")
+                                    .removePrefix("www.")
+                                    .split("/").first()
+                                
+                                // Insert ke database
+                                database.phishingUrlDao().insert(PhishingUrl(
+                                    url = entry.url,
+                                    domain = domain,
+                                    reason = "PhishTank verified: ${entry.target}",
+                                    source = "phishtank",
+                                    confidence = 1.0f
+                                ))
+                                
+                                insertCount++
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error parsing PhishTank entry", e)
+                            }
+                        }
+                        
+                        saveLastSyncTime("phishtank")
+                        Log.d(TAG, "PhishTank sync complete: $insertCount URLs imported")
+                        onComplete(true, insertCount)
+                        
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing PhishTank data", e)
+                        onComplete(false, 0)
+                    }
+                }
+            } else {
+                Log.e(TAG, "Failed to fetch from PhishTank")
+                onComplete(false, 0)
+            }
+        }
     }
 
     /**
-     * Check nomor telepon terhadap server database.
+     * Sync dari custom API endpoint (n8n workflow)
      */
-    fun checkNumberOnServer(number: String, callback: (ServerCheckResult) -> Unit) {
-        Log.d(TAG, "Checking number on server: $number")
+    fun syncFromCustomApi(onComplete: (success: Boolean, count: Int) -> Unit) {
+        if (customApiBaseUrl.isEmpty()) {
+            Log.d(TAG, "Custom API not configured")
+            onComplete(false, 0)
+            return
+        }
+        
+        Log.d(TAG, "Syncing from custom API: $customApiBaseUrl")
+        
+        apiClient.get("$customApiBaseUrl/phishing-urls") { success, response ->
+            if (success && response != null) {
+                thread {
+                    try {
+                        val jsonArray = JsonParser.parseString(response).asJsonArray
+                        var insertCount = 0
+                        
+                        jsonArray.forEach { element ->
+                            val obj = element.asJsonObject
+                            val url = obj.get("url").asString
+                            val domain = obj.get("domain")?.asString ?: extractDomain(url)
+                            val reason = obj.get("reason")?.asString ?: "Reported by community"
+                            
+                            database.phishingUrlDao().insert(PhishingUrl(
+                                url = url,
+                                domain = domain,
+                                reason = reason,
+                                source = "api",
+                                confidence = 0.95f
+                            ))
+                            
+                            insertCount++
+                        }
+                        
+                        Log.d(TAG, "Custom API sync complete: $insertCount URLs")
+                        onComplete(true, insertCount)
+                        
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing custom API data", e)
+                        onComplete(false, 0)
+                    }
+                }
+            } else {
+                onComplete(false, 0)
+            }
+        }
+    }
 
-        // TODO: Implement actual server check
-        callback(ServerCheckResult(false, false, "Server not configured")) // Placeholder
+    /**
+     * Report phishing URL ke server (crowdsourcing)
+     */
+    fun reportPhishingUrl(url: String, source: String, reason: String, onComplete: (Boolean) -> Unit) {
+        Log.d(TAG, "Reporting phishing URL: $url")
+        
+        // Simpan ke local DB dulu (selalu berhasil)
+        thread {
+            val domain = extractDomain(url)
+            database.phishingUrlDao().insert(PhishingUrl(
+                url = url,
+                domain = domain,
+                reason = reason,
+                source = "user_report",
+                confidence = 1.0f
+            ))
+        }
+        
+        // Kirim ke custom API jika configured
+        if (customApiBaseUrl.isNotEmpty()) {
+            val json = gson.toJson(mapOf(
+                "url" to url,
+                "source" to source,
+                "reason" to reason,
+                "timestamp" to System.currentTimeMillis(),
+                "app_version" to "1.0"
+            ))
+            
+            apiClient.post("$customApiBaseUrl/report-url", json) { success, _ ->
+                Log.d(TAG, "Report to server: ${if (success) "success" else "failed"}")
+                onComplete(success)
+            }
+        } else {
+            // No server configured, local save is enough
+            onComplete(true)
+        }
+    }
+
+    /**
+     * Report phishing number ke server
+     */
+    fun reportPhishingNumber(number: String, source: String, reason: String, onComplete: (Boolean) -> Unit) {
+        Log.d(TAG, "Reporting phishing number: $number")
+        
+        // Simpan ke local DB
+        thread {
+            database.phishingNumberDao().insert(PhishingNumber(
+                number = number,
+                reason = reason,
+                source = "user_report",
+                confidence = 1.0f
+            ))
+        }
+        
+        // Kirim ke server jika configured
+        if (customApiBaseUrl.isNotEmpty()) {
+            val json = gson.toJson(mapOf(
+                "number" to number,
+                "source" to source,
+                "reason" to reason,
+                "timestamp" to System.currentTimeMillis()
+            ))
+            
+            apiClient.post("$customApiBaseUrl/report-number", json) { success, _ ->
+                onComplete(success)
+            }
+        } else {
+            onComplete(true)
+        }
+    }
+
+    /**
+     * Check URL terhadap server database (real-time check)
+     */
+    fun checkUrlOnServer(url: String, callback: (found: Boolean, isThreat: Boolean, reason: String) -> Unit) {
+        if (customApiBaseUrl.isEmpty()) {
+            callback(false, false, "Server not configured")
+            return
+        }
+        
+        val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")
+        apiClient.get("$customApiBaseUrl/check-url?url=$encodedUrl") { success, response ->
+            if (success && response != null) {
+                try {
+                    val obj = JsonParser.parseString(response).asJsonObject
+                    val found = obj.get("found").asBoolean
+                    val isThreat = obj.get("is_threat").asBoolean
+                    val reason = obj.get("reason")?.asString ?: "Unknown"
+                    
+                    callback(found, isThreat, reason)
+                } catch (e: Exception) {
+                    callback(false, false, "Parse error")
+                }
+            } else {
+                callback(false, false, "Server error")
+            }
+        }
+    }
+
+    /**
+     * Get sync statistics
+     */
+    fun getSyncStats(callback: (lastSync: Long, totalEntries: Int) -> Unit) {
+        thread {
+            val lastSync = getLastSyncTime("phishtank")
+            val totalEntries = database.phishingUrlDao().getAll().size
+            callback(lastSync, totalEntries)
+        }
+    }
+
+    // Helper methods
+    private fun extractDomain(url: String): String {
+        return url.removePrefix("http://")
+            .removePrefix("https://")
+            .removePrefix("www.")
+            .split("/").first()
+    }
+
+    private fun getLastSyncTime(source: String): Long {
+        val prefs = context.getSharedPreferences("server_sync", Context.MODE_PRIVATE)
+        return prefs.getLong("last_sync_$source", 0)
+    }
+
+    private fun saveLastSyncTime(source: String) {
+        val prefs = context.getSharedPreferences("server_sync", Context.MODE_PRIVATE)
+        prefs.edit().putLong("last_sync_$source", System.currentTimeMillis()).apply()
     }
 }

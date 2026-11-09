@@ -35,19 +35,29 @@ class CallMonitorService : Service() {
                 TelephonyManager.CALL_STATE_RINGING -> {
                     val number = phoneNumber ?: "Unknown"
                     Log.d(TAG, "Incoming call from: $number")
-                    sendLogToUI("📞 Incoming call from $number", "Phone", "CALL")
+                    sendLogToUI("📞 Panggilan masuk dari $number", "Phone", "CALL")
                 }
                 TelephonyManager.CALL_STATE_OFFHOOK -> {
-                    Log.d(TAG, "Call answered, starting analysis...")
-                    sendLogToUI("Analyzing call...", "Phone", "CALL")
+                    Log.d(TAG, "Call answered, starting real-time STT analysis...")
+                    sendLogToUI("🎤 Memulai analisis percakapan real-time...", "Phone", "CALL")
 
-                    // --- INTEGRATION POINT FOR AI TEAM ---
+                    // Start real-time voice fraud detection
+                    callFraudDetector.onPartialTranscription = { partial ->
+                        // Optional: log partial results for debugging
+                        Log.v(TAG, "Partial: $partial")
+                    }
+                    
                     callFraudDetector.startAnalyzing()
                 }
                 TelephonyManager.CALL_STATE_IDLE -> {
                     Log.d(TAG, "Call ended")
                     callFraudDetector.stopAnalyzing()
-                    sendLogToUI("Call ended, analysis stopped.", "Phone", "SYSTEM")
+                    
+                    val transcript = callFraudDetector.getCurrentTranscription()
+                    if (transcript.isNotEmpty()) {
+                        sendLogToUI("📝 Transkripsi: ${transcript.take(100)}...", "Phone", "SYSTEM")
+                    }
+                    sendLogToUI("✅ Analisis selesai, panggilan berakhir.", "Phone", "SYSTEM")
                 }
             }
         }
@@ -60,8 +70,11 @@ class CallMonitorService : Service() {
 
         // Setup fraud detection callback
         callFraudDetector.onFraudDetected = { confidence, reason ->
-            sendLogToUI("⚠️ FRAUD CALL DETECTED! ($reason) Confidence: ${"%.0f".format(confidence * 100)}%", "Phone", "PHISHING")
-            // TODO: Bisa tambahkan aksi otomatis (end call, notification, dll)
+            val confidencePercent = "%.0f".format(confidence * 100)
+            sendLogToUI("🚨 PANGGILAN PENIPUAN TERDETEKSI! ($reason) Tingkat keyakinan: $confidencePercent%", "Phone", "PHISHING")
+            
+            // Show warning notification
+            showFraudWarning(reason, confidence)
         }
 
         createNotificationChannel()
@@ -120,6 +133,50 @@ class CallMonitorService : Service() {
         intent.putExtra("source", source)
         intent.putExtra("type", type)
         sendBroadcast(intent)
+    }
+
+    private fun showFraudWarning(reason: String, confidence: Float) {
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        
+        // Create high-priority warning channel
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val warningChannel = NotificationChannel(
+                "fraud_warning_channel",
+                "Peringatan Penipuan",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifikasi peringatan panggilan penipuan"
+                enableVibration(true)
+                enableLights(true)
+            }
+            notificationManager.createNotificationChannel(warningChannel)
+        }
+
+        val confidencePercent = "%.0f".format(confidence * 100)
+        val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, "fraud_warning_channel")
+                .setContentTitle("🚨 PERINGATAN: Panggilan Penipuan!")
+                .setContentText("Keyakinan: $confidencePercent% - $reason")
+                .setStyle(Notification.BigTextStyle().bigText("Terdeteksi pola penipuan dalam percakapan.\n\nAlasan: $reason\n\nTingkat keyakinan: $confidencePercent%\n\nSegera akhiri panggilan jika Anda diminta transfer uang atau memberikan OTP/PIN."))
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setAutoCancel(true)
+                .setPriority(Notification.PRIORITY_HIGH)
+                .setVibrate(longArrayOf(0, 500, 200, 500))
+                .build()
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+                .setContentTitle("🚨 PERINGATAN: Panggilan Penipuan!")
+                .setContentText("Keyakinan: $confidencePercent% - $reason")
+                .setStyle(Notification.BigTextStyle().bigText("Terdeteksi pola penipuan dalam percakapan.\n\nAlasan: $reason\n\nTingkat keyakinan: $confidencePercent%\n\nSegera akhiri panggilan jika Anda diminta transfer uang atau memberikan OTP/PIN."))
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setAutoCancel(true)
+                .setPriority(Notification.PRIORITY_HIGH)
+                .setVibrate(longArrayOf(0, 500, 200, 500))
+                .build()
+        }
+
+        notificationManager.notify(9999, notification)
     }
 
     companion object {

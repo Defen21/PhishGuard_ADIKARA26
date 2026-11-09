@@ -41,11 +41,33 @@ class DefaultRuleProvider : AIModelProvider {
         "apk surat", "cek resi", "unduh aplikasi", "bantuan sosial"
     )
 
-    // Voice fraud keywords
+    // Voice fraud keywords (Indonesian common scam patterns)
     private val fraudVoiceKeywords = listOf(
-        "transfer", "hadiah", "menang", "verifikasi", "rekening",
-        "otp", "pin", "password", "segera", "darurat",
-        "polisi", "pajak", "denda", "blokir", "keluarga"
+        // Financial terms
+        "transfer", "rekening", "saldo", "mutasi", "tabungan", "kredit", "pinjaman",
+        // Prize/lottery scams
+        "hadiah", "menang", "undian", "pemenang", "kupon", "voucher",
+        // Verification scams
+        "verifikasi", "konfirmasi", "aktivasi", "validasi", "update data",
+        // Security credentials
+        "otp", "kode otp", "pin", "password", "kata sandi", "cvv", "cvc",
+        // Urgency tactics
+        "segera", "cepat", "sekarang juga", "dalam 24 jam", "darurat", "penting",
+        // Authority impersonation
+        "polisi", "kepolisian", "cyber crime", "interpol", "pajak", "dirjen pajak",
+        "bank indonesia", "bi", "ojk", "otoritas", "pejabat",
+        // Threats
+        "denda", "tilang", "sanksi", "blokir", "dibekukan", "ditangkap", "laporan polisi",
+        // Social engineering
+        "keluarga", "anak anda", "istri anda", "suami anda", "kecelakaan", "rumah sakit",
+        // Package delivery scams
+        "paket", "kiriman", "jne", "j&t", "sicepat", "pos indonesia",
+        // Account suspension scams
+        "dinonaktifkan", "suspended", "kadaluarsa", "expired", "pemblokiran",
+        // Investment scams
+        "investasi", "profit", "untung besar", "passive income", "binary option",
+        // Government aid scams
+        "bansos", "bantuan sosial", "subsidi", "dana pemerintah"
     )
 
     override fun initialize(context: Context) {
@@ -111,22 +133,81 @@ class DefaultRuleProvider : AIModelProvider {
         val text = input.content.lowercase()
         Log.d(TAG, "Analyzing voice: ${text.take(100)}...")
 
-        val matchCount = fraudVoiceKeywords.count { text.contains(it) }
-        val confidence = when {
-            matchCount >= 3 -> 0.90f
-            matchCount >= 2 -> 0.60f
-            matchCount >= 1 -> 0.30f
-            else -> 0.0f
+        // Count matched keywords
+        val matchedKeywords = fraudVoiceKeywords.filter { text.contains(it) }
+        val matchCount = matchedKeywords.size
+
+        // Advanced scoring with context
+        var score = 0f
+        var reasons = mutableListOf<String>()
+
+        // Financial + credentials = high risk
+        val hasFinancial = matchedKeywords.any { it in listOf("transfer", "rekening", "saldo", "mutasi") }
+        val hasCredentials = matchedKeywords.any { it in listOf("otp", "pin", "password", "cvv", "cvc") }
+        if (hasFinancial && hasCredentials) {
+            score += 0.50f
+            reasons.add("Kombinasi istilah finansial + kredensial")
         }
 
+        // Authority + threat = impersonation scam
+        val hasAuthority = matchedKeywords.any { it in listOf("polisi", "pajak", "ojk", "bank indonesia") }
+        val hasThreat = matchedKeywords.any { it in listOf("denda", "blokir", "ditangkap", "sanksi") }
+        if (hasAuthority && hasThreat) {
+            score += 0.45f
+            reasons.add("Modus penyamaran otoritas + ancaman")
+        }
+
+        // Social engineering (family emergency)
+        val hasFamilyEmergency = matchedKeywords.any { it in listOf("keluarga", "anak anda", "istri anda", "kecelakaan", "rumah sakit") }
+        if (hasFamilyEmergency) {
+            score += 0.40f
+            reasons.add("Modus rekayasa sosial (darurat keluarga)")
+        }
+
+        // Urgency tactics
+        val hasUrgency = matchedKeywords.any { it in listOf("segera", "cepat", "sekarang juga", "dalam 24 jam") }
+        if (hasUrgency && matchCount >= 3) {
+            score += 0.25f
+            reasons.add("Tekanan waktu (urgency)")
+        }
+
+        // Prize/lottery scam
+        val hasPrize = matchedKeywords.any { it in listOf("hadiah", "menang", "undian", "pemenang") }
+        if (hasPrize) {
+            score += 0.20f
+            reasons.add("Modus hadiah/undian palsu")
+        }
+
+        // Base score from keyword count
+        val baseScore = when {
+            matchCount >= 5 -> 0.40f
+            matchCount >= 3 -> 0.25f
+            matchCount >= 2 -> 0.15f
+            matchCount >= 1 -> 0.05f
+            else -> 0.0f
+        }
+        score += baseScore
+
+        // Cap at 1.0
+        val confidence = minOf(score, 1.0f)
+
         return if (confidence >= 0.6f) {
+            val reasonText = buildString {
+                append("Terdeteksi $matchCount kata kunci penipuan")
+                if (matchedKeywords.isNotEmpty()) {
+                    append(": ${matchedKeywords.take(5).joinToString(", ")}")
+                }
+                if (reasons.isNotEmpty()) {
+                    append("\n\nPola: ${reasons.joinToString("; ")}")
+                }
+            }
             AnalysisResult.threat(
                 confidence = confidence,
-                reason = "Voice contains $matchCount fraud-related keywords",
+                reason = reasonText,
                 category = ThreatCategory.FRAUD_CALL
             )
         } else {
-            AnalysisResult.safe(1.0f - confidence, "Voice appears normal")
+            AnalysisResult.safe(1.0f - confidence, "Percakapan normal")
         }
     }
 }

@@ -1,108 +1,315 @@
 package com.example.ai_project_singapore.core.network
 
 import android.util.Log
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 import kotlin.concurrent.thread
 
 /**
- * BOILERPLATE UNTUK TIM NETWORK
- *
- * Kelas ini mengatur komunikasi HTTP dengan server/API eksternal.
- * Digunakan oleh Tim AI dan Security jika membutuhkan data dari internet.
- *
- * PENTING: Semua network call HARUS dilakukan di background thread!
- * Android akan crash (NetworkOnMainThreadException) jika fetch di Main Thread.
- *
- * TODO (TIM NETWORK / SEMUA TIM):
- * 1. Ganti base URL dengan endpoint API yang sesungguhnya.
- * 2. Tambahkan autentikasi (API key, Bearer token) jika diperlukan.
- * 3. Bisa ganti HttpURLConnection dengan library (OkHttp, Retrofit).
+ * Real Production-Ready HTTP Client
+ * 
+ * Features:
+ * - GET/POST/PUT/DELETE methods
+ * - Configurable timeouts
+ * - Retry logic untuk network errors
+ * - Better error handling
+ * - Response parsing helpers
  */
 class ApiClient {
 
     private val TAG = "ApiClient"
+    
+    // Default timeouts (dapat di-override per request)
+    var defaultConnectTimeout = 10000  // 10 seconds
+    var defaultReadTimeout = 15000     // 15 seconds
+    var maxRetries = 2
+
+    data class ApiResponse(
+        val success: Boolean,
+        val statusCode: Int,
+        val body: String?,
+        val error: String?
+    )
 
     /**
-     * Melakukan GET request ke URL tertentu.
-     * HARUS dipanggil dari background thread!
-     *
-     * @param endpoint URL endpoint tujuan
-     * @param callback Hasil: (success: Boolean, responseBody: String?)
+     * GET request dengan retry logic
      */
-    fun get(endpoint: String, callback: (Boolean, String?) -> Unit) {
-        thread {
-            try {
-                Log.d(TAG, "GET: $endpoint")
-                val url = URL(endpoint)
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
+    fun get(
+        endpoint: String, 
+        headers: Map<String, String> = emptyMap(),
+        timeout: Int = defaultConnectTimeout,
+        callback: (Boolean, String?) -> Unit
+    ) {
+        executeWithRetry(endpoint, "GET", null, headers, timeout, callback)
+    }
 
-                if (connection.responseCode == 200) {
-                    val response = connection.inputStream.bufferedReader().readText()
-                    callback(true, response)
-                } else {
-                    callback(false, "HTTP ${connection.responseCode}")
-                }
-                connection.disconnect()
-            } catch (e: Exception) {
-                Log.e(TAG, "GET Error", e)
-                callback(false, e.message)
-            }
+    /**
+     * POST request dengan JSON body
+     */
+    fun post(
+        endpoint: String, 
+        jsonBody: String,
+        headers: Map<String, String> = emptyMap(),
+        timeout: Int = defaultConnectTimeout,
+        callback: (Boolean, String?) -> Unit
+    ) {
+        executeWithRetry(endpoint, "POST", jsonBody, headers, timeout, callback)
+    }
+
+    /**
+     * PUT request
+     */
+    fun put(
+        endpoint: String,
+        jsonBody: String,
+        headers: Map<String, String> = emptyMap(),
+        timeout: Int = defaultConnectTimeout,
+        callback: (Boolean, String?) -> Unit
+    ) {
+        executeWithRetry(endpoint, "PUT", jsonBody, headers, timeout, callback)
+    }
+
+    /**
+     * DELETE request
+     */
+    fun delete(
+        endpoint: String,
+        headers: Map<String, String> = emptyMap(),
+        timeout: Int = defaultConnectTimeout,
+        callback: (Boolean, String?) -> Unit
+    ) {
+        executeWithRetry(endpoint, "DELETE", null, headers, timeout, callback)
+    }
+
+    /**
+     * Enhanced GET dengan detailed response
+     */
+    fun getDetailed(
+        endpoint: String,
+        headers: Map<String, String> = emptyMap(),
+        timeout: Int = defaultConnectTimeout,
+        callback: (ApiResponse) -> Unit
+    ) {
+        thread {
+            val response = executeRequest(endpoint, "GET", null, headers, timeout)
+            callback(response)
         }
     }
 
     /**
-     * Melakukan POST request dengan body JSON.
-     * HARUS dipanggil dari background thread!
-     *
-     * @param endpoint URL endpoint tujuan
-     * @param jsonBody JSON string sebagai body request
-     * @param callback Hasil: (success: Boolean, responseBody: String?)
+     * Execute request dengan retry logic
      */
-    fun post(endpoint: String, jsonBody: String, callback: (Boolean, String?) -> Unit) {
+    private fun executeWithRetry(
+        endpoint: String,
+        method: String,
+        body: String?,
+        headers: Map<String, String>,
+        timeout: Int,
+        callback: (Boolean, String?) -> Unit
+    ) {
         thread {
-            try {
-                Log.d(TAG, "POST: $endpoint")
-                val url = URL(endpoint)
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
-                connection.setRequestProperty("Content-Type", "application/json")
+            var attempt = 0
+            var lastError: String? = null
+            
+            while (attempt <= maxRetries) {
+                val response = executeRequest(endpoint, method, body, headers, timeout)
+                
+                if (response.success) {
+                    callback(true, response.body)
+                    return@thread
+                }
+                
+                lastError = response.error
+                
+                // Retry pada network error, tapi tidak untuk client/server error
+                if (response.statusCode in 400..599) {
+                    // HTTP error, jangan retry
+                    break
+                }
+                
+                attempt++
+                if (attempt <= maxRetries) {
+                    Log.d(TAG, "Retry attempt $attempt/$maxRetries for $endpoint")
+                    Thread.sleep(1000L * attempt) // Exponential backoff
+                }
+            }
+            
+            callback(false, lastError)
+        }
+    }
+
+    /**
+     * Core request execution
+     */
+    private fun executeRequest(
+        endpoint: String,
+        method: String,
+        body: String?,
+        headers: Map<String, String>,
+        timeout: Int
+    ): ApiResponse {
+        var connection: HttpURLConnection? = null
+        
+        try {
+            Log.d(TAG, "$method: $endpoint")
+            
+            val url = URL(endpoint)
+            connection = url.openConnection() as HttpURLConnection
+            
+            connection.requestMethod = method
+            connection.connectTimeout = timeout
+            connection.readTimeout = defaultReadTimeout
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("User-Agent", "PhishGuard-Android/1.0")
+            
+            // Add custom headers
+            headers.forEach { (key, value) ->
+                connection.setRequestProperty(key, value)
+            }
+            
+            // Write body untuk POST/PUT
+            if (body != null && (method == "POST" || method == "PUT")) {
                 connection.doOutput = true
-
                 connection.outputStream.use { outputStream ->
-                    outputStream.write(jsonBody.toByteArray())
+                    outputStream.write(body.toByteArray(Charsets.UTF_8))
+                    outputStream.flush()
                 }
+            }
+            
+            val statusCode = connection.responseCode
+            Log.d(TAG, "$method $endpoint -> HTTP $statusCode")
+            
+            // Read response
+            val responseBody = if (statusCode in 200..299) {
+                connection.inputStream.bufferedReader().use { it.readText() }
+            } else {
+                // Try to read error stream
+                try {
+                    connection.errorStream?.bufferedReader()?.use { it.readText() }
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            
+            return ApiResponse(
+                success = statusCode in 200..299,
+                statusCode = statusCode,
+                body = responseBody,
+                error = if (statusCode !in 200..299) "HTTP $statusCode" else null
+            )
+            
+        } catch (e: SocketTimeoutException) {
+            Log.e(TAG, "Request timeout: $endpoint", e)
+            return ApiResponse(
+                success = false,
+                statusCode = 0,
+                body = null,
+                error = "Connection timeout"
+            )
+        } catch (e: java.net.UnknownHostException) {
+            Log.e(TAG, "Unknown host: $endpoint", e)
+            return ApiResponse(
+                success = false,
+                statusCode = 0,
+                body = null,
+                error = "Cannot resolve host (check internet connection)"
+            )
+        } catch (e: java.io.IOException) {
+            Log.e(TAG, "Network error: $endpoint", e)
+            return ApiResponse(
+                success = false,
+                statusCode = 0,
+                body = null,
+                error = "Network error: ${e.message}"
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Request failed: $endpoint", e)
+            return ApiResponse(
+                success = false,
+                statusCode = 0,
+                body = null,
+                error = "Request failed: ${e.message}"
+            )
+        } finally {
+            connection?.disconnect()
+        }
+    }
 
-                if (connection.responseCode == 200) {
-                    val response = connection.inputStream.bufferedReader().readText()
-                    callback(true, response)
-                } else {
-                    callback(false, "HTTP ${connection.responseCode}")
+    /**
+     * Download file dari URL (untuk future use)
+     */
+    fun downloadFile(
+        url: String,
+        outputPath: String,
+        progressCallback: ((bytesDownloaded: Long, totalBytes: Long) -> Unit)? = null,
+        callback: (success: Boolean, error: String?) -> Unit
+    ) {
+        thread {
+            var connection: HttpURLConnection? = null
+            try {
+                connection = URL(url).openConnection() as HttpURLConnection
+                connection.connectTimeout = defaultConnectTimeout
+                connection.readTimeout = 30000 // 30 seconds untuk download
+                
+                val statusCode = connection.responseCode
+                if (statusCode != 200) {
+                    callback(false, "HTTP $statusCode")
+                    return@thread
                 }
-                connection.disconnect()
+                
+                val totalBytes = connection.contentLengthLong
+                val outputFile = java.io.File(outputPath)
+                
+                connection.inputStream.use { input ->
+                    outputFile.outputStream().use { output ->
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        var totalRead = 0L
+                        
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                            totalRead += bytesRead
+                            progressCallback?.invoke(totalRead, totalBytes)
+                        }
+                    }
+                }
+                
+                callback(true, null)
+                
             } catch (e: Exception) {
-                Log.e(TAG, "POST Error", e)
+                Log.e(TAG, "Download failed: $url", e)
                 callback(false, e.message)
+            } finally {
+                connection?.disconnect()
             }
         }
     }
 
     /**
-     * Contoh: Cek URL terhadap threat intelligence API.
-     *
-     * TODO: Ganti dengan endpoint API yang sesungguhnya.
+     * Check if URL is reachable (HEAD request)
      */
-    fun checkUrlThreat(urlToCheck: String, callback: (Boolean) -> Unit) {
-        get("https://api.example.com/check?url=$urlToCheck") { success, response ->
-            if (success && response != null) {
-                callback(response.contains("malicious"))
-            } else {
-                callback(false) // fallback: assume safe
+    fun isUrlReachable(url: String, callback: (reachable: Boolean, responseTime: Long) -> Unit) {
+        thread {
+            var connection: HttpURLConnection? = null
+            try {
+                val startTime = System.currentTimeMillis()
+                connection = URL(url).openConnection() as HttpURLConnection
+                connection.requestMethod = "HEAD"
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                
+                val statusCode = connection.responseCode
+                val responseTime = System.currentTimeMillis() - startTime
+                
+                callback(statusCode in 200..399, responseTime)
+                
+            } catch (e: Exception) {
+                callback(false, 0)
+            } finally {
+                connection?.disconnect()
             }
         }
     }
