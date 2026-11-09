@@ -27,6 +27,7 @@ tidak lagi melindungi siapa pun.
 - [Menyiapkan aplikasi di perangkat](#menyiapkan-aplikasi-di-perangkat)
 - [Struktur proyek](#struktur-proyek)
 - [Memperbarui blocklist](#memperbarui-blocklist)
+- [Keamanan basis data komunitas](#keamanan-basis-data-komunitas)
 - [Menyetel ambang deteksi](#menyetel-ambang-deteksi)
 - [Pengujian](#pengujian)
 - [Batasan yang diketahui](#batasan-yang-diketahui)
@@ -125,6 +126,15 @@ sinyal lemah tidak pernah cukup.
 | Domain didominasi angka | 0,20 | |
 | Nama domain >45 karakter | 0,15 | |
 | Kata sensitif di **path** | 0,12 | sengaja kecil — hampir semua situs punya `/login` |
+
+Istilah judi juga dipisah dua tingkat. Yang **tidak ambigu** (`gacor`,
+`sbobet`, `casino`, `maxwin`) langsung memvonis begitu cocok. Yang **ambigu**
+(`slot`, `toto`, `rtp`, `olympus`) butuh dua sinyal, karena sendirian ia
+menjerat usaha sah: `toto.co.jp` adalah produsen sanitasi Jepang,
+`slotcarshop.com` toko mainan, `rtp.pt` penyiar nasional Portugal. Domain
+judol asli hampir selalu menumpuk beberapa istilah sekaligus
+(`totoslot88`, `rtpslotgacor`), jadi deteksinya tidak berkurang — yang
+hilang hanya salah tangkapnya.
 
 Pencocokan brand **tidak pernah memakai substring bebas**. Yang diterima
 hanya token utuh (`bca`), token dengan afiks yang dikenal (`klikbca`,
@@ -399,6 +409,39 @@ Opsi yang tersedia:
 
 ---
 
+## Keamanan basis data komunitas
+
+Saat pengguna menekan "blokir", URL-nya diunggah ke Firestore agar pengguna
+lain ikut terlindungi. Ada dua konsekuensi yang perlu dipahami sebelum
+memakainya di produksi.
+
+**Konfigurasi Firebase ikut terbundel di setiap APK.** `google-services.json`
+memang dirancang untuk itu, tapi artinya siapa pun bisa mengekstraknya dan
+memakai kunci yang sama. Karena aplikasi ini menulis ke Firestore **tanpa
+autentikasi sama sekali** (tidak ada `FirebaseAuth` di kode), aturan
+Firestore-nya harus mengizinkan tulisan anonim supaya fitur laporan berfungsi.
+Konsekuensinya, laporan bisa datang dari mana saja — bukan hanya dari
+aplikasi.
+
+Aturannya kini dilacak di [`firestore.rules`](firestore.rules), bukan hanya
+ada di konsol. Isinya membatasi bentuk tulisan, mengunci `metadata/` dan
+`official_urls/` dari klien, dan menutup penghapusan. Deploy dengan:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+Berkas itu juga memuat langkah peningkatan yang sebenarnya menutup celah —
+**App Check** dan **Anonymous Auth**. Terapkan perubahan kodenya lebih dulu,
+sebarkan versinya, baru perketat aturannya; kalau dibalik, aplikasi yang sudah
+beredar berhenti melapor.
+
+**Daftar putih selalu menang.** Karena laporan komunitas bisa keliru atau
+disuntik, `AnalysisPipeline` memeriksa daftar domain resmi **sebelum** semua
+sumber ancaman. Tanpa urutan itu, satu entri buruk yang menyebut `bca.co.id`
+akan membuat aplikasi memblokir BCA asli untuk seluruh pengguna — persis
+kebalikan dari tugasnya.
+
 ## Menyetel ambang deteksi
 
 Semua angka penyetelan terkumpul di satu tempat, bukan tersebar:
@@ -474,7 +517,12 @@ akan mendeteksinya sendiri saat inisialisasi.
       sertifikat penandatangan release. Selama masih placeholder, verifikasi
       tanda tangan sengaja dilewati agar build release tidak mati sendiri.
       Ambil dengan `keytool -list -v -keystore release.keystore | grep SHA256`.
-- [ ] Siapkan `google-services.json` untuk proyek Firebase produksi.
+- [ ] Siapkan `google-services.json` untuk proyek Firebase produksi. Berkas
+      ini tidak dilacak git; tiap pengembang menaruh salinannya di `app/`.
+- [ ] Deploy `firestore.rules`, lalu pastikan `metadata/` dan `official_urls/`
+      benar-benar tertutup untuk klien.
+- [ ] Aktifkan Firebase App Check sebelum membuka pendaftaran publik —
+      tanpa itu laporan komunitas bisa dikirim siapa saja.
 - [ ] Segarkan `blocklist.bloom` supaya tidak basi.
 - [ ] Uji di ROM Xiaomi/Oppo/Vivo — ketiganya paling agresif membunuh
       layanan latar dan memblokir tampilan di atas aplikasi lain.

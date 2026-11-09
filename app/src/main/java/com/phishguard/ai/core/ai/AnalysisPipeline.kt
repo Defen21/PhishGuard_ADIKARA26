@@ -28,11 +28,16 @@ data class LayeredResult(
 /**
  * Orchestrator untuk analisis phishing.
  *
- * Mengikuti workflow diagram:
- * 1. Cek local DB dulu (PhishingDatabase)
- * 2. Cek server DB (ServerSyncManager) — jika tersedia
- * 3. Run AI model (AIModelProvider)
- * 4. Return result → caller handles Human-in-the-Loop
+ * Urutan pemeriksaan, dari yang paling tepercaya:
+ * 1. Daftar putih domain resmi — MENANG atas semua sumber lain
+ * 2. Database phishing lokal (URL persis, lalu per-host)
+ * 3. Blocklist global Lyra (Bloom filter luring)
+ * 4. Model AI / heuristik (AIModelProvider)
+ * 5. Return result → pemanggil menangani Human-in-the-Loop
+ *
+ * Daftar putih sengaja didahulukan: entri dari laporan komunitas dan umpan
+ * publik bisa keliru atau disuntik pihak lain, dan domain bank tidak boleh
+ * bisa dijatuhkan oleh sumber semacam itu.
  *
  * Provider bisa di-swap kapan saja (plug and play):
  *   pipeline.urlProvider = TFLiteUrlProvider()
@@ -74,24 +79,34 @@ class AnalysisPipeline(private val context: Context) {
             try {
                 Log.d(TAG, "Analyzing URL: $url from $source")
 
-                // Step 1: Check local phishing URL database
+                // Step 1: DAFTAR PUTIH RESMI — DIDAHULUKAN.
+                //
+                // Dulu pemeriksaan database phishing berjalan lebih dulu,
+                // sehingga satu entri buruk dari laporan komunitas bisa
+                // membuat bca.co.id divonis phishing untuk SEMUA pengguna.
+                // Basis data komunitas ditulis tanpa autentikasi, jadi
+                // siapa pun yang mengekstrak konfigurasi dari APK bisa
+                // menyuntikkan domain bank ke sana.
+                //
+                // Domain resmi kini tidak bisa dijatuhkan oleh sumber mana
+                // pun — komunitas, umpan publik, maupun blocklist global.
+                val domain = extractDomain(url)
+                val knownOfficial = database.officialUrlDao().findByDomain(domain)
+                if (knownOfficial != null) {
+                    Log.d(TAG, "URL cocok domain resmi: $domain")
+                    callback(AnalysisResult.safe(1.0f, "Domain resmi: ${knownOfficial.organization}"))
+                    return@thread
+                }
+
+                // Step 2: Cek database phishing lokal (URL persis)
                 val knownPhishing = database.phishingUrlDao().findByUrl(url)
                 if (knownPhishing != null) {
-                    Log.d(TAG, "URL found in local phishing DB")
+                    Log.d(TAG, "URL ada di database phishing lokal")
                     callback(AnalysisResult.threat(
                         confidence = 1.0f,
                         reason = "URL terdaftar dalam database phishing: ${knownPhishing.reason}",
                         category = ThreatCategory.PHISHING
                     ))
-                    return@thread
-                }
-
-                // Step 2: Check official URL database (whitelist)
-                val domain = extractDomain(url)
-                val knownOfficial = database.officialUrlDao().findByDomain(domain)
-                if (knownOfficial != null) {
-                    Log.d(TAG, "URL matches official domain: $domain")
-                    callback(AnalysisResult.safe(1.0f, "Domain resmi: ${knownOfficial.organization}"))
                     return@thread
                 }
 
@@ -154,9 +169,12 @@ class AnalysisPipeline(private val context: Context) {
             try {
                 Log.d(TAG, "Analyzing message from $source: ${message.take(50)}...")
 
-                // Step 1: Extract URLs from message and check DB
+                // Step 1: Ekstrak URL dari pesan lalu cek DB.
+                // Domain resmi dilewati lebih dulu — alasan sama seperti di
+                // analyzeUrl: entri komunitas tak boleh menjatuhkan bank.
                 val urls = extractUrls(message)
                 for (url in urls) {
+                    if (database.officialUrlDao().findByDomain(extractDomain(url)) != null) continue
                     val knownPhishing = database.phishingUrlDao().findByUrl(url)
                     if (knownPhishing != null) {
                         callback(AnalysisResult.threat(
@@ -289,6 +307,12 @@ class AnalysisPipeline(private val context: Context) {
                 Log.d(TAG, "Layer 1: Found URLs = $urls")
 
                 for (url in urls) {
+                    // Daftar putih resmi didahulukan (lihat catatan di analyzeUrl).
+                    if (database.officialUrlDao().findByDomain(extractDomain(url)) != null) {
+                        Log.d(TAG, "Layer 1 ✅ Domain resmi: ${extractDomain(url)}")
+                        continue
+                    }
+
                     // Cek local phishing URL DB
                     val knownPhishing = database.phishingUrlDao().findByUrl(url)
                     if (knownPhishing != null) {
@@ -300,13 +324,7 @@ class AnalysisPipeline(private val context: Context) {
                         return@thread
                     }
 
-                    // Cek official URL DB (skip jika official)
                     val domain = extractDomain(url)
-                    val knownOfficial = database.officialUrlDao().findByDomain(domain)
-                    if (knownOfficial != null) {
-                        Log.d(TAG, "Layer 1 ✅ Official URL: $domain")
-                        continue // URL resmi, skip ke URL berikutnya
-                    }
 
                     // Blocklist global Lyra — tautan di SMS/chat adalah jalur
                     // penipuan nomor satu, jadi diperiksa di sini juga.
