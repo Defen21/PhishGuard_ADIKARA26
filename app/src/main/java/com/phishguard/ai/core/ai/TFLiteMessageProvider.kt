@@ -207,7 +207,28 @@ class TFLiteMessageProvider : AIModelProvider {
      * Lebih akurat dari simple contains() karena menghitung skor kumulatif.
      */
     private fun runEnhancedRuleEngine(message: String): AnalysisResult {
-        val matched = rules.filter { message.contains(it.pattern) }
+        // Teks ternormalisasi dipakai BERSAMA teks asli, bukan
+        // menggantikannya: melipat angka jadi huruf merusak pola sah
+        // seperti "100 juta". Lihat TextNormalizer.
+        val normal = TextNormalizer.normalize(message)
+        val kabur = TextNormalizer.obfuscationScore(message)
+
+        // ── Judi online di dalam pesan ──────────────────────────────────
+        // JudolWordlist sebelumnya HANYA dipakai untuk URL, tidak pernah
+        // untuk isi pesan. Akibatnya spam judol di SMS/WhatsApp lolos
+        // total selama hanya frasa penipuan bank yang diperiksa.
+        val judol = JudolWordlist.scan(normal)
+        if (JudolWordlist.hasUnambiguousSignal(normal) && judol.score >= 6) {
+            Log.d(TAG, "Spam judi terdeteksi: ${judol.summary} (kabur=$kabur)")
+            return AnalysisResult.threat(
+                confidence = if (kabur >= 2) 0.95f else 0.88f,
+                reason = "Pesan berisi promosi judi online (${judol.summary})." +
+                        if (kabur >= 2) " Tulisannya sengaja dikaburkan agar lolos penyaring." else "",
+                category = ThreatCategory.SCAM_MESSAGE
+            )
+        }
+
+        val matched = rules.filter { message.contains(it.pattern) || normal.contains(it.pattern) }
         matched.forEach { Log.d(TAG, "Rule match: '${it.pattern}' (${it.score}, ${it.category}, weak=${it.weak})") }
 
         val strongest = matched.filter { !it.weak }.maxByOrNull { it.score }
@@ -238,6 +259,13 @@ class TFLiteMessageProvider : AIModelProvider {
             if (mismatch > score) {
                 score = mismatch; category = "URL_PHISHING"; pattern = url
             }
+        }
+
+        // Tulisan yang sengaja dikaburkan itu sinyal tersendiri: pesan
+        // wajar nyaris tak pernah memakai huruf berspasi, leetspeak, dan
+        // tanda baca penyisip sekaligus.
+        if (kabur >= 2 && (score > 0f || judol.score >= 4)) {
+            score = maxOf(score, 0.60f) + 0.10f
         }
 
         // Pola lemah hanya MENGUATKAN pola kuat, tidak pernah memicu sendiri.

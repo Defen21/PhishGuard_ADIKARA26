@@ -50,6 +50,32 @@ class MessageRuleEngineTest {
     }
 
     @Test
+    fun `spam judol yang sengaja dikaburkan tertangkap`() {
+        // Kalimat nyata dari laporan pengguna. Sebelum ada normalisasi teks
+        // dan JudolWordlist di jalur pesan, ini lolos total.
+        val spam = "Klaim Saldo Gratiss tanpa D e p 0\n" +
+                "Mahy'0ng ways 3| M4X'W1N | W 'D 3min.\n" +
+                "https://wde.la/bu5f44"
+        val r = analisis(spam)
+        assertTrue("skor=${r.confidence} alasan=${r.reason}", r.isThreat)
+    }
+
+    @Test
+    fun `varian pengaburan lain juga tertangkap`() {
+        assertTrue(analisis("Info 5L0T G4C0R hari ini, D3P0 50rb bonus 100rb, W D cepat").isThreat)
+        assertTrue(analisis("s.l.o.t g.a.c.o.r maxwin depo pulsa tanpa potongan bonus").isThreat)
+    }
+
+    @Test
+    fun `pesan wajar berangka tidak ikut kena normalisasi`() {
+        // Normalisasi melipat angka jadi huruf, jadi teks asli harus tetap
+        // ikut dinilai — kalau tidak, pesan berisi angka jadi kacau.
+        assertFalse(analisis("Tolong transfer 250 ribu ke rekening kemarin ya").isThreat)
+        assertFalse(analisis("Meeting jam 10 pagi, ruang 3 lantai 5").isThreat)
+        assertFalse(analisis("Harga totalnya 1500000 sudah termasuk ongkir").isThreat)
+    }
+
+    @Test
     fun `URL meniru bank di dalam pesan tertangkap`() {
         assertTrue(analisis("Cek saldo di bca-verifikasi.vercel.app sekarang").isThreat)
     }

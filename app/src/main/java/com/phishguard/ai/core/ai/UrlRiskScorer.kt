@@ -168,8 +168,15 @@ object UrlRiskScorer {
         // Sebelumnya ia berada di rantai else-if, sehingga domain yang memuat
         // satu istilah ambigu tidak pernah diperiksa isinya sama sekali —
         // justru kasus yang paling butuh pemeriksaan konten.
-        if (pageText.isNotBlank() && JudolWordlist.hasStrongSignal(pageText)) {
-            val hit = JudolWordlist.scan(pageText)
+        // Isi halaman judol juga sering dikaburkan; nilai bentuk
+        // ternormalisasinya di samping teks asli.
+        val pageNormal = if (pageText.isBlank()) "" else TextNormalizer.normalize(pageText)
+        if (pageText.isNotBlank() &&
+            (JudolWordlist.hasStrongSignal(pageText) || JudolWordlist.hasStrongSignal(pageNormal))
+        ) {
+            val asli = JudolWordlist.scan(pageText)
+            val kabur = JudolWordlist.scan(pageNormal)
+            val hit = if (kabur.score > asli.score) kabur else asli
             if (JudolWordlist.isLikelyJudol(hit)) {
                 return Verdict(0.99f, listOf(Signal("Isi halaman berupa promosi judi online (${hit.summary})", 0.99f)), Level.DANGEROUS, hostname, registrable)
             } else if (hit.score >= 4) {
