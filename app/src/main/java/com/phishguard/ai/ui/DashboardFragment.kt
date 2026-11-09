@@ -18,6 +18,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.phishguard.ai.R
 import com.phishguard.ai.data.ActivityLogItem
+import com.phishguard.ai.core.network.FirebaseSyncManager
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.android.material.button.MaterialButton
 
 class DashboardFragment : Fragment() {
@@ -51,6 +53,8 @@ class DashboardFragment : Fragment() {
 
     private val recentAdapter = ActivityLogAdapter()
     private val recentItems = mutableListOf<ActivityLogItem>()
+    private var reportListeners: List<ListenerRegistration> = emptyList()
+    private var reportSync: FirebaseSyncManager? = null
 
     private var scannedCount = 0
     private var blockedCount = 0
@@ -138,6 +142,7 @@ class DashboardFragment : Fragment() {
         
         updateUI()
         loadReports()
+        startReportSync()
         val filter = IntentFilter().apply {
             addAction("com.phishguard.ai.LOG_UPDATE")
             addAction("com.phishguard.ai.REPORT_UPDATE")
@@ -154,6 +159,42 @@ class DashboardFragment : Fragment() {
         try {
             requireContext().unregisterReceiver(logReceiver)
         } catch (_: Exception) {}
+        reportListeners.forEach { it.remove() }
+        reportListeners = emptyList()
+    }
+
+    private fun startReportSync() {
+        reportListeners.forEach { it.remove() }
+        val prefs = requireContext().getSharedPreferences("activity_log", Context.MODE_PRIVATE)
+        val records = prefs.getStringSet("reports", emptySet()) ?: emptySet()
+        if (records.isEmpty()) return
+        reportSync = FirebaseSyncManager(requireContext().applicationContext)
+        reportListeners = reportSync!!.listenToReports(records) { reportId, status, feedback ->
+            updateLocalReport(reportId, status, feedback)
+        }
+    }
+
+    private fun statusRank(status: String): Int = when (status.lowercase()) {
+        "terkirim", "pending" -> 1
+        "diproses", "processing" -> 2
+        "selesai", "done", "completed" -> 3
+        "ditolak", "rejected" -> 3
+        else -> 0
+    }
+
+    private fun updateLocalReport(reportId: String, status: String, feedback: String) {
+        val prefs = requireContext().getSharedPreferences("activity_log", Context.MODE_PRIVATE)
+        val reports = (prefs.getStringSet("reports", emptySet()) ?: emptySet()).map { record ->
+            if (record.startsWith("$reportId|")) {
+                val parts = record.split("|", limit = 5)
+                val current = parts.getOrNull(3).orEmpty()
+                if (statusRank(status) >= statusRank(current)) {
+                    parts.take(3).joinToString("|") + "|$status|${feedback.replace('|', ' ').take(200)}"
+                } else record
+            } else record
+        }.toSet()
+        prefs.edit().putStringSet("reports", reports).apply()
+        loadReports()
     }
 
     private fun updateUI() {
@@ -233,8 +274,9 @@ class DashboardFragment : Fragment() {
         tvReportSummary.text = if (latest == null) {
             getString(R.string.no_reports)
         } else {
-            val parts = latest.split("|", limit = 4)
-            getString(R.string.reports_summary, reports.size, parts.getOrNull(2).orEmpty(), parts.getOrNull(3).orEmpty())
+            val parts = latest.split("|", limit = 5)
+            val feedback = parts.getOrNull(4).orEmpty().takeIf { it.isNotBlank() }?.let { " • Feedback: $it" }.orEmpty()
+            getString(R.string.reports_summary, reports.size, parts.getOrNull(2).orEmpty(), parts.getOrNull(3).orEmpty(), feedback)
         }
     }
 }

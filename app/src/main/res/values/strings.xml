@@ -21,7 +21,7 @@
     <string name="no_threats">No threats detected yet</string>
     <string name="my_reports">Laporan Saya</string>
     <string name="no_reports">Belum ada laporan.</string>
-    <string name="reports_summary">%1$d laporan • Terakhir: %2$s • Status: %3$s</string>
+    <string name="reports_summary">%1$d laporan • Terakhir: %2$s • Status: %3$s%4$s</string>
 
     <!-- Protection -->
     <string name="protection_title">App Monitoring</string>

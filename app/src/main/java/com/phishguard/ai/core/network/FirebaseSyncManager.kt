@@ -7,6 +7,7 @@ import com.phishguard.ai.data.db.PhishingDatabase
 import com.phishguard.ai.data.db.PhishingUrl
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import kotlin.concurrent.thread
@@ -282,11 +283,11 @@ class FirebaseSyncManager(private val context: Context) {
         source: String,
         reason: String,
         confidence: Float,
+        reportId: String = java.util.UUID.randomUUID().toString(),
         onSuccess: ((String) -> Unit)? = null,
         onFailure: ((String) -> Unit)? = null
     ) {
         val messageHash = sha256(message)
-        val reportId = java.util.UUID.randomUUID().toString()
         val data = hashMapOf(
             "message_hash" to messageHash,
             "urls" to urls.distinct().take(10),
@@ -306,6 +307,50 @@ class FirebaseSyncManager(private val context: Context) {
                 Log.e(TAG, "Gagal menyimpan laporan: ${e.message}")
                 onFailure?.invoke(e.message ?: "Unknown error")
             }
+    }
+
+    fun listenToReports(
+        reportRecords: Set<String>,
+        onChanged: (reportId: String, status: String, feedback: String) -> Unit
+    ): List<ListenerRegistration> {
+        val listeners = mutableListOf<ListenerRegistration>()
+        val records = reportRecords.mapNotNull { record ->
+            val parts = record.split("|", limit = 4)
+            if (parts.size >= 3) parts[0] to parts[2] else null
+        }
+        records.forEach { (localId, indicator) ->
+            if (localId.isBlank()) return@forEach
+            listeners += db.collection("reports").document(localId)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+                    emitReportStatus(localId, snapshot, onChanged)
+                }
+            // Backward compatibility: reports created before localId == Firestore ID.
+            if (indicator.isNotBlank()) {
+                listeners += db.collection("reports")
+                    .whereArrayContains("urls", indicator)
+                    .addSnapshotListener { snapshot, error ->
+                        if (error != null || snapshot == null) return@addSnapshotListener
+                        snapshot.documents.forEach { emitReportStatus(localId, it, onChanged) }
+                    }
+            }
+        }
+        return listeners
+    }
+
+    private fun emitReportStatus(
+        localId: String,
+        snapshot: com.google.firebase.firestore.DocumentSnapshot,
+        onChanged: (String, String, String) -> Unit
+    ) {
+        val rawStatus = snapshot.getString("status").orEmpty().lowercase()
+        val status = when (rawStatus) {
+            "done", "selesai", "completed" -> "Selesai"
+            "rejected", "ditolak" -> "Ditolak"
+            "processing", "diproses" -> "Diproses"
+            else -> "Terkirim"
+        }
+        onChanged(localId, status, snapshot.getString("feedback").orEmpty())
     }
 
     private fun sha256(value: String): String =

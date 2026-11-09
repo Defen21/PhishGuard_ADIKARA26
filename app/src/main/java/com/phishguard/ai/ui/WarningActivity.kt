@@ -158,6 +158,7 @@ class WarningActivity : AppCompatActivity() {
                         source = source,
                         reason = reason,
                         confidence = confidence,
+                        reportId = localReportId,
                         onSuccess = { updateLocalReport(localReportId, "Diproses") }
                     )
                     if (reportedUrl.isNotBlank()) uploadToFirebase(reportedUrl, reason, confidence)
