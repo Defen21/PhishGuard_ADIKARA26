@@ -4,23 +4,22 @@ import android.content.Context
 import android.util.Log
 
 /**
- * BOILERPLATE UNTUK TIM AI
+ * URL Phishing Detector.
  *
- * Kelas ini mengevaluasi apakah sebuah URL merupakan web phishing atau bukan.
+ * Delegates analysis to AnalysisPipeline which follows the full workflow:
+ * Local DB → Server DB → AI Model → Result
  *
  * INTEGRASI:
  * - Dipanggil oleh PhishGuardService setiap kali URL terdeteksi di browser.
- * - Hasil analisis otomatis dikirim ke UI via BroadcastReceiver.
  *
- * TODO (TIM AI):
- * 1. Ganti logika dummy di bawah dengan model AI yang sesungguhnya.
- * 2. Bisa menggunakan TFLite, ONNX, atau API eksternal (Gemini/OpenAI).
- * 3. Jika menggunakan API, pastikan request dilakukan di background thread.
- * 4. Parameter `sourceApp` menunjukkan darimana URL berasal (Chrome, WhatsApp, dll).
+ * TIM AI:
+ * Untuk mengganti AI model, buat class yang implement AIModelProvider
+ * lalu set di AnalysisPipeline.urlProvider.
  */
 class PhishingDetector(private val context: Context) {
 
     private val TAG = "PhishingDetector"
+    private val pipeline = AnalysisPipeline(context)
 
     /**
      * Menganalisis URL untuk mendeteksi phishing.
@@ -32,31 +31,12 @@ class PhishingDetector(private val context: Context) {
     fun analyzeUrl(url: String, sourceApp: String, onResult: (Boolean, Float, String) -> Unit) {
         Log.d(TAG, "Analyzing URL from $sourceApp: $url")
 
-        // ============================================================
-        // TODO (TIM AI): GANTI BLOK DI BAWAH DENGAN MODEL AI ASLI
-        // ============================================================
-
-        // Logika dummy sementara untuk demonstrasi:
-        val isSuspicious = url.contains("login") ||
-                url.contains("verify") ||
-                url.contains("secure") ||
-                url.contains("update-account") ||
-                url.contains("free-gift")
-
-        if (isSuspicious && !url.contains("google.com") && !url.contains("facebook.com")) {
-            onResult(true, 0.85f, "URL contains suspicious patterns commonly used in phishing.")
-        } else {
-            onResult(false, 0.95f, "URL appears safe.")
+        pipeline.analyzeUrl(url, sourceApp) { result ->
+            onResult(result.isThreat, result.confidence, result.reason)
         }
+    }
 
-        // ============================================================
-        // CONTOH IMPLEMENTASI DENGAN API (untuk referensi):
-        //
-        // thread {
-        //     val apiClient = ApiClient()
-        //     val result = apiClient.checkUrl(url)
-        //     onResult(result.isPhishing, result.confidence, result.reason)
-        // }
-        // ============================================================
+    fun release() {
+        pipeline.release()
     }
 }

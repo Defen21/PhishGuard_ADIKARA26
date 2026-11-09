@@ -4,108 +4,101 @@ import android.content.Context
 import android.util.Log
 
 /**
- * BOILERPLATE UNTUK TIM AI
+ * Call Fraud Detector — Voice Phishing Analysis.
  *
- * Kelas ini menganalisis panggilan telepon secara real-time untuk mendeteksi
- * pola penipuan berdasarkan gaya bicara, template penipuan, dan kata-kata kunci.
+ * Uses SlidingWindowMemory for real-time transcription buffering
+ * and AnalysisPipeline for AI analysis.
  *
  * INTEGRASI:
  * - Dipanggil oleh CallMonitorService ketika pengguna menerima telepon.
- * - Jika terdeteksi penipuan, callback `onFraudDetected` dipanggil.
- * - UI akan menampilkan peringatan dan (opsional) memutus telepon.
+ * - Jika terdeteksi penipuan, callback onFraudDetected dipanggil.
  *
- * TODO (TIM AI):
- * 1. Integrasikan Speech-to-Text (STT) engine untuk transkripsi real-time.
- *    - Google Speech API, Whisper, atau model STT on-device.
- * 2. Analisis transkripsi menggunakan NLP model untuk deteksi pola penipuan.
- *    - Template: "transfer uang", "hadiah gratis", "verifikasi rekening", dll.
- * 3. Implementasikan scoring system untuk menentukan tingkat kecurigaan.
- * 4. Jika confidence > threshold, panggil `onFraudDetected`.
+ * TIM AI:
+ * 1. Integrasikan Speech-to-Text engine (feed ke addTranscription())
+ * 2. Buat AIModelProvider untuk voice analysis
+ * 3. Set di AnalysisPipeline.voiceProvider
  */
 class CallFraudDetector(private val context: Context) {
 
     private val TAG = "CallFraudDetector"
     private var isAnalyzing = false
+    private val pipeline = AnalysisPipeline(context)
+    private val slidingWindow = SlidingWindowMemory()
 
     /**
      * Callback ketika penipuan terdeteksi dalam panggilan.
-     * Set ini dari CallMonitorService.
      */
     var onFraudDetected: ((confidence: Float, reason: String) -> Unit)? = null
 
     /**
-     * Mulai menganalisis audio panggilan.
+     * Mulai menganalisis panggilan.
      *
-     * TODO (TIM AI): Implementasikan real-time audio capture & analysis.
+     * TODO (TIM AI):
+     * 1. Capture audio stream menggunakan AudioRecord
+     * 2. Feed audio ke Speech-to-Text engine
+     * 3. Panggil addTranscription() dengan hasil STT
      */
     fun startAnalyzing() {
         if (isAnalyzing) return
         isAnalyzing = true
+        slidingWindow.clear()
         Log.d(TAG, "Started call fraud analysis")
 
-        // ============================================================
-        // TODO (TIM AI): IMPLEMENTASIKAN REAL-TIME CALL ANALYSIS
-        //
-        // Langkah-langkah yang disarankan:
-        // 1. Capture audio stream menggunakan AudioRecord
-        // 2. Kirim audio chunks ke STT engine
-        // 3. Analisis transkripsi secara berkala
-        // 4. Jika terdeteksi pola penipuan: onFraudDetected?.invoke(0.9f, "reason")
-        //
-        // CONTOH:
+        // TODO (TIM AI): Start audio capture & STT here
+        // Example flow:
         // val audioRecord = AudioRecord(...)
         // thread {
         //     while (isAnalyzing) {
         //         val buffer = ByteArray(bufferSize)
         //         audioRecord.read(buffer, 0, bufferSize)
-        //         val transcription = sttEngine.transcribe(buffer)
-        //         val score = analyzeTranscription(transcription)
-        //         if (score > FRAUD_THRESHOLD) {
-        //             onFraudDetected?.invoke(score, "Detected fraud pattern: ...")
-        //         }
+        //         val text = sttEngine.transcribe(buffer)
+        //         addTranscription(text)
         //     }
         // }
-        // ============================================================
     }
 
     /**
-     * Berhenti menganalisis audio panggilan.
+     * Feed transkripsi baru dari STT engine.
+     * Otomatis di-buffer di SlidingWindowMemory dan dianalisis.
+     */
+    fun addTranscription(text: String) {
+        if (!isAnalyzing) return
+
+        slidingWindow.addTranscription(text)
+        val currentWindow = slidingWindow.getCurrentWindow()
+
+        // Analyze current window
+        pipeline.analyzeVoice(currentWindow) { result ->
+            if (result.isThreat && result.confidence >= 0.6f) {
+                onFraudDetected?.invoke(result.confidence, result.reason)
+            }
+        }
+    }
+
+    /**
+     * Berhenti menganalisis.
      */
     fun stopAnalyzing() {
         isAnalyzing = false
-        Log.d(TAG, "Stopped call fraud analysis")
-
-        // TODO (TIM AI): Bersihkan resource (AudioRecord, model, dll.)
+        slidingWindow.clear()
+        Log.d(TAG, "Stopped call fraud analysis. Total transcribed: ${slidingWindow.getTotalLength()} chars")
     }
 
     /**
-     * Menganalisis teks transkripsi untuk mendeteksi pola penipuan.
-     *
-     * TODO (TIM AI): Implementasikan NLP-based fraud pattern detection.
-     *
-     * @param transcription Teks hasil transkripsi
-     * @return confidence score (0.0 - 1.0)
+     * Menganalisis teks transkripsi (backward-compatible method).
      */
     fun analyzeTranscription(transcription: String): Float {
         Log.d(TAG, "Analyzing transcription: ${transcription.take(100)}...")
 
-        // ============================================================
-        // TODO (TIM AI): GANTI DENGAN MODEL NLP
-        // ============================================================
+        var resultConfidence = 0.0f
+        pipeline.analyzeVoice(transcription) { result ->
+            resultConfidence = result.confidence
+        }
+        return resultConfidence
+    }
 
-        // Logika dummy sementara:
-        val fraudKeywords = listOf(
-            "transfer", "hadiah", "menang", "verifikasi", "rekening",
-            "OTP", "pin", "password", "segera", "darurat",
-            "polisi", "pajak", "denda", "blokir"
-        )
-
-        val lowerText = transcription.lowercase()
-        val matchCount = fraudKeywords.count { lowerText.contains(it.lowercase()) }
-
-        return if (matchCount >= 3) 0.9f
-        else if (matchCount >= 2) 0.6f
-        else if (matchCount >= 1) 0.3f
-        else 0.0f
+    fun release() {
+        stopAnalyzing()
+        pipeline.release()
     }
 }
