@@ -311,6 +311,15 @@ dinyalakan pengguna sendiri di Pengaturan:
 Izin SMS, telepon, mikrofon, dan notifikasi diminta otomatis saat aplikasi
 pertama dibuka.
 
+> **Catatan untuk pengujian lewat adb.** Sebagian ROM (terverifikasi di Vivo
+> OriginOS, Android 14) menolak pengaktifan layanan aksesibilitas lewat
+> `settings put secure enabled_accessibility_services` — nilainya dikembalikan
+> ke `null` beberapa detik kemudian. Itu proteksi ROM terhadap malware
+> aksesibilitas, bukan bug aplikasi. Togglenya harus ditekan langsung di layar.
+> Perlu diingat juga: `adb shell am force-stop` dan pemasangan ulang APK
+> sama-sama mematikan layanan aksesibilitas, jadi ia harus dinyalakan lagi
+> setiap selesai `installDebug`.
+
 > **Catatan privasi.** Seluruh analisis berjalan di perangkat. Yang keluar
 > hanya URL yang **secara eksplisit dikonfirmasi pengguna** sebagai penipuan,
 > dan itu dikirim ke Firestore untuk melindungi pengguna lain. Riwayat

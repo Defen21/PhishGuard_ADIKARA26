@@ -74,7 +74,9 @@
     <string name="warning_subtitle">Terindikasi berusaha mencuri data Anda.</string>
     <string name="warning_question">Apakah menurut Anda ini memang penipuan?</string>
     <string name="warning_btn_block">Keluar dari situs ini</string>
-    <string name="warning_btn_safe">Situs ini aman, jangan peringatkan lagi</string>
+    <!-- Harus muat satu baris di tombol; label panjang terpotong di layar sempit. -->
+    <string name="warning_btn_safe">Situs ini aman</string>
+    <!-- Label fitur pelaporan pesan (dipertahankan dari perubahan tim). -->
     <string name="warning_btn_close">Laporkan pesan ini</string>
     <string name="warning_btn_ignore">Abaikan pesan ini</string>
     <string name="risk_message_reported">Laporan tersimpan. PhishGuard tetap aktif.</string>
