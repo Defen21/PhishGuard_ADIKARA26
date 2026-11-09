@@ -40,9 +40,17 @@ class SmsNotificationInterceptorService : NotificationListenerService() {
         "com.samsung.android.messaging",       // Samsung Messages
         "com.android.mms",                     // AOSP Messages
         "org.telegram.messenger",              // Telegram
+        "org.thunderdog.challegram",           // Telegram X
         "com.whatsapp",                        // WhatsApp
+        "com.whatsapp.w4b",                    // WhatsApp Business — terpasang
+                                               // di banyak HP dan sebelumnya
+                                               // terlewat sama sekali
         "com.facebook.orca",                   // Facebook Messenger
-        "com.instagram.android"                // Instagram DM
+        "com.instagram.android",               // Instagram DM
+        "com.instagram.barcelona",             // Threads
+        "com.google.android.gm",               // Gmail
+        "com.microsoft.office.outlook",        // Outlook
+        "com.linkedin.android"                 // LinkedIn InMail
     )
 
     // ID notifikasi yang sudah di-flag phishing (hindari loop)
@@ -86,12 +94,15 @@ class SmsNotificationInterceptorService : NotificationListenerService() {
         val fullMessage = "$title $text $bigText".trim()
         if (fullMessage.length < 10) return // Abaikan notifikasi kosong/singkat
 
-        Log.d(TAG, "Notifikasi dari $packageName: ${fullMessage.take(60)}...")
+        // JANGAN cetak isi pesan ke log. Ini notifikasi pribadi pengguna —
+        // siapa pun yang bisa membaca logcat (adb, alat diagnostik pabrikan)
+        // akan ikut membaca percakapannya. Cukup catat panjangnya.
+        Log.d(TAG, "Notifikasi dari $packageName (${fullMessage.length} karakter)")
 
         // Analisis dengan TFLite NLP
         messageAnalyzer?.analyzeMessage(fullMessage, packageName) { isThreat, confidence, reason ->
             if (isThreat && confidence >= 0.65f) {
-                Log.w(TAG, "🚨 PHISHING NOTIF DETECTED! confidence=$confidence reason=$reason")
+                Log.w(TAG, "🚨 Notifikasi penipuan terdeteksi dari $packageName (keyakinan=$confidence)")
 
                 // 1. Sembunyikan notifikasi asli
                 try {

@@ -43,6 +43,13 @@ android {
         jvmTarget = "11"
     }
 
+    // android.util.Log melempar "not mocked" di unit test JVM. Kelas
+    // heuristik memakai Log untuk penelusuran, jadi kembalikan nilai
+    // default supaya bisa diuji tanpa emulator.
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     // Jangan kompres: keduanya dipetakan ke memori langsung dari APK.
     // .tflite untuk model, .bloom untuk blocklist domain (DomainBlocklist).
     aaptOptions {

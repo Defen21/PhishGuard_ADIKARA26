@@ -275,6 +275,23 @@ object UrlRiskScorer {
         return false
     }
 
+    /**
+     * Host besar/berbagi-pakai yang TIDAK boleh divonis per-domain.
+     *
+     * Umpan publik (PhishTank, OpenPhish) melaporkan URL abusif yang
+     * menumpang di host sah — mis. "google.com/share.google?q=…" atau
+     * "sites.google.com/view/…". Entri semacam itu tersimpan dengan
+     * domain="google.com", dan pencocokan per-domain lalu memvonis SELURUH
+     * google.com sebagai phishing. Terbukti terjadi di perangkat uji.
+     *
+     * URL persisnya tetap diblokir lewat pencocokan URL penuh; yang
+     * dilarang hanya menggeneralisasi satu URL jadi seluruh host.
+     */
+    fun isSharedOrMajorHost(host: String): Boolean {
+        val h = host.lowercase().removePrefix("www.")
+        return matchesDomain(h, COMMON_BENIGN) || matchesDomain(h, FREE_HOSTS)
+    }
+
     fun registrableDomain(host: String): String {
         val l = host.split('.').filter { it.isNotBlank() }
         if (l.size <= 2) return host

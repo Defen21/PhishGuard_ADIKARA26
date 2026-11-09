@@ -113,7 +113,16 @@ class AnalysisPipeline(private val context: Context) {
                 // Step 2.5: Check local phishing DB by HOST (bukan hanya exact URL).
                 // Feed ribuan URL (PhishTank/OpenPhish) tersimpan per-domain; query ini
                 // menangkap subdomain/path variant yang tak match exact URL.
-                val knownByDomain = database.phishingUrlDao().findByDomain(extractDomain(url))
+                // Host besar/berbagi-pakai dikecualikan dari pencocokan
+                // per-domain: satu URL abusif yang menumpang di sana tidak
+                // boleh menjatuhkan seluruh hostnya. URL persisnya sudah
+                // ditangani Step 2 di atas.
+                val knownByDomain = if (UrlRiskScorer.isSharedOrMajorHost(domain)) {
+                    Log.d(TAG, "Host berbagi-pakai $domain — lewati pencocokan per-domain")
+                    null
+                } else {
+                    database.phishingUrlDao().findByDomain(domain)
+                }
                 if (knownByDomain != null) {
                     Log.d(TAG, "Hostname ${extractDomain(url)} matched in phishing DB")
                     callback(AnalysisResult.threat(

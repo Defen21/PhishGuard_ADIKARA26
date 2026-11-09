@@ -211,9 +211,24 @@ class TFLiteMessageProvider : AIModelProvider {
         matched.forEach { Log.d(TAG, "Rule match: '${it.pattern}' (${it.score}, ${it.category}, weak=${it.weak})") }
 
         val strongest = matched.filter { !it.weak }.maxByOrNull { it.score }
-        var score = strongest?.score ?: 0f
-        var category = strongest?.category ?: ""
-        var pattern = strongest?.pattern ?: ""
+        val weakMatches = matched.filter { it.weak }
+        val weakCategories = weakMatches.map { it.category }.distinct().size
+
+        // Pola lemah menumpuk JUGA berarti sesuatu.
+        //
+        // Sebelumnya tanpa satu pun pola kuat skornya 0 — berapa pun pola
+        // lemah yang cocok. Akibatnya pesan scam bergaya lunak yang lazim
+        // di WhatsApp lolos total, misalnya "Selamat! Anda dapat hadiah
+        // 100 juta, klik link berikut dan install aplikasinya."
+        //
+        // Sekarang tiga pola lemah dari minimal dua kategori berbeda sudah
+        // cukup jadi titik awal. Satu atau dua pola lemah tetap tidak
+        // berarti apa-apa, jadi perlindungan false-positive-nya utuh.
+        val weakBase = if (weakMatches.size >= 3 && weakCategories >= 2) 0.60f else 0f
+
+        var score = maxOf(strongest?.score ?: 0f, weakBase)
+        var category = strongest?.category ?: weakMatches.firstOrNull()?.category ?: ""
+        var pattern = strongest?.pattern ?: weakMatches.joinToString(", ") { it.pattern }
 
         // URL di dalam pesan: mengaku brand bank tapi domainnya bukan resmi.
         // Ini sinyal kuat dan berdiri sendiri.
@@ -226,7 +241,7 @@ class TFLiteMessageProvider : AIModelProvider {
         }
 
         // Pola lemah hanya MENGUATKAN pola kuat, tidak pernah memicu sendiri.
-        val weakCount = matched.count { it.weak }
+        val weakCount = weakMatches.size
         val distinctCategories = matched.map { it.category }.distinct().size
         if (score > 0f) {
             if (weakCount > 0) score += 0.05f * minOf(weakCount, 3)
