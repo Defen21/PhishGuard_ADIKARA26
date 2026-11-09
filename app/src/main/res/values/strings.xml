@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PhishGuard AI</string>
+    <string name="app_subtitle">AI-Powered Anti-Fraud Protection</string>
+
+    <!-- Bottom Nav -->
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_protection">Protection</string>
+    <string name="nav_activity">Activity</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Dashboard -->
+    <string name="status_active">System Protected</string>
+    <string name="status_inactive">Protection Inactive</string>
+    <string name="status_desc_active">All monitoring systems are running</string>
+    <string name="status_desc_inactive">Enable accessibility service to start</string>
+    <string name="stat_scanned">URLs Scanned</string>
+    <string name="stat_blocked">Threats Blocked</string>
+    <string name="stat_calls">Calls Monitored</string>
+    <string name="recent_threats">Recent Threats</string>
+    <string name="no_threats">No threats detected yet</string>
+
+    <!-- Protection -->
+    <string name="protection_title">App Monitoring</string>
+    <string name="protection_desc">Select which apps to monitor for suspicious links and messages</string>
+    <string name="app_sms">Messages (SMS)</string>
+    <string name="app_sms_desc">Monitor incoming SMS for phishing links</string>
+    <string name="app_whatsapp">WhatsApp</string>
+    <string name="app_whatsapp_desc">Scan links shared in WhatsApp chats</string>
+    <string name="app_telegram">Telegram</string>
+    <string name="app_telegram_desc">Scan links shared in Telegram chats</string>
+    <string name="app_facebook">Facebook Messenger</string>
+    <string name="app_facebook_desc">Scan links in Facebook messages</string>
+    <string name="app_instagram">Instagram</string>
+    <string name="app_instagram_desc">Scan links in Instagram DMs</string>
+    <string name="app_chrome">Chrome Browser</string>
+    <string name="app_chrome_desc">Monitor URLs visited in Chrome</string>
+    <string name="call_protection">Call Protection</string>
+    <string name="call_protection_desc">AI-powered detection of fraudulent phone calls</string>
+
+    <!-- Activity -->
+    <string name="activity_title">Activity Log</string>
+    <string name="filter_all">All</string>
+    <string name="filter_phishing">Phishing</string>
+    <string name="filter_calls">Calls</string>
+    <string name="filter_safe">Safe</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="setting_accessibility">Accessibility Service</string>
+    <string name="setting_accessibility_desc">Required for monitoring apps</string>
+    <string name="setting_notifications">Notifications</string>
+    <string name="setting_notifications_desc">Alert when threats are detected</string>
+    <string name="setting_tts">Voice Alerts</string>
+    <string name="setting_tts_desc">Speak warnings aloud when threats found</string>
+    <string name="setting_about">About</string>
+    <string name="setting_version">Version 1.0</string>
+    <string name="btn_enable">Enable Protection</string>
+    <string name="btn_manage">Manage Permissions</string>
+</resources>
