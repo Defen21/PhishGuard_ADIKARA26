@@ -16,9 +16,30 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Versi database. Klien HANYA membaca. Menaikkan versi memaksa seluruh
-    // pengguna menyinkron ulang, jadi itu tuas penyalahgunaan — pindahkan ke
-    // Cloud Function yang berjalan dengan hak admin.
+    // Versi database.
+    //
+    // Klien MEMANG perlu menulis ke sini: FirebaseSyncManager.bumpServerVersion()
+    // menaikkan versi setiap kali laporan berhasil diunggah, dan itulah yang
+    // memberi tahu pengguna lain untuk menyinkron ulang. Menutupnya rapat akan
+    // mematikan propagasi komunitas tanpa gejala yang terlihat.
+    //
+    // Jadi yang dibatasi adalah BENTUKNYA: hanya dokumen "versions", hanya
+    // ketiga field itu, dan nilainya harus bertipe benar. Tidak ada dokumen
+    // metadata lain yang boleh dibuat.
+    //
+    // Sisa risikonya: penyerang masih bisa menaikkan versi berulang kali dan
+    // memaksa semua klien sinkron ulang (boros kuota, bukan perusakan data).
+    // Penutupnya App Check — lihat bagian PENINGKATAN di bawah.
+    match /metadata/versions {
+      allow read: if true;
+      allow write: if request.resource.data.keys().hasOnly(
+                        ['phishing_version', 'official_version', 'last_updated'])
+                   && (!('phishing_version' in request.resource.data)
+                        || request.resource.data.phishing_version is string)
+                   && (!('official_version' in request.resource.data)
+                        || request.resource.data.official_version is string);
+    }
+
     match /metadata/{doc} {
       allow read: if true;
       allow write: if false;
@@ -56,20 +77,20 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    function isValidReport(d) {
+      return d.keys().hasAll(['url', 'reason'])
+          && d.size() <= 10
+          && d.url is string && d.url.size() > 3 && d.url.size() < 500
+          && d.reason is string && d.reason.size() < 1000
+          && (!('confidence' in d) || (d.confidence is number
+                && d.confidence >= 0 && d.confidence <= 1));
+    }
+
     // Apa pun di luar yang disebut di atas: tertutup.
     match /{document=**} {
       allow read, write: if false;
     }
   }
-}
-
-function isValidReport(d) {
-  return d.keys().hasAll(['url', 'reason'])
-      && d.size() <= 10
-      && d.url is string && d.url.size() > 3 && d.url.size() < 500
-      && d.reason is string && d.reason.size() < 1000
-      && (!('confidence' in d) || (d.confidence is number
-            && d.confidence >= 0 && d.confidence <= 1));
 }
 
 // ── PENINGKATAN YANG DISARANKAN ────────────────────────────────────────────
