@@ -183,7 +183,9 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCloseWarning"
                 android:layout_width="match_parent"
-                android:layout_height="52dp"
+                android:layout_height="wrap_content"
+                android:minHeight="52dp"
+                android:paddingVertical="10dp"
                 android:layout_marginTop="14dp"
                 android:text="@string/warning_btn_block"
                 android:textAllCaps="false"

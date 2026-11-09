@@ -73,7 +73,7 @@
     <string name="warning_title_sms">Pesan ini terindikasi penipuan</string>
     <string name="warning_subtitle">Terindikasi berusaha mencuri data Anda.</string>
     <string name="warning_question">Apakah menurut Anda ini memang penipuan?</string>
-    <string name="warning_btn_block">Keluar dari situs ini</string>
+    <string name="warning_btn_block">Laporkan dan keluar dari situs ini</string>
     <!-- Harus muat satu baris di tombol; label panjang terpotong di layar sempit. -->
     <string name="warning_btn_safe">Situs ini aman</string>
     <!-- Label fitur pelaporan pesan (dipertahankan dari perubahan tim). -->

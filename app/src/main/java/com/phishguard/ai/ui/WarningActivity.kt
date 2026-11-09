@@ -46,6 +46,16 @@ class WarningActivity : AppCompatActivity() {
     /** Diaktifkan lewat Pengaturan → Voice Alerts. Toggle itu dulu tidak terhubung ke apa pun. */
     private var tts: TextToSpeechEngine? = null
 
+    /**
+     * Minta service menavigasi kembali satu halaman saat overlay ditutup.
+     *
+     * Dipakai mode "sudah diblokir permanen", yang dulu melompat ke layar
+     * Home — itu menutup konteks pengguna sepenuhnya. Kembali satu halaman
+     * mengembalikannya ke tempat sebelum situs berbahaya dibuka, dan tab
+     * peramban tetap utuh.
+     */
+    private var requestBackOnClose = false
+
     override fun onDestroy() {
         // Beri tahu PhishGuardService bahwa overlay sudah benar-benar tertutup.
         // Service memakai sinyal ini untuk mengeksekusi navigasi Back ke
@@ -54,6 +64,7 @@ class WarningActivity : AppCompatActivity() {
         try {
             sendBroadcast(Intent(PhishGuardService.ACTION_WARNING_CLOSED).apply {
                 setPackage(packageName)
+                putExtra("request_back", requestBackOnClose)
             })
         } catch (_: Exception) {}
         tts?.shutdown()
@@ -180,7 +191,10 @@ class WarningActivity : AppCompatActivity() {
             tvQuestion.setText(R.string.warning_blocked_permanent)
             btnSafe.visibility = android.view.View.GONE
             btnBlock.setText(R.string.warning_btn_block)
-            btnBlock.setOnClickListener { goHomeAndFinish() }
+            btnBlock.setOnClickListener {
+                requestBackOnClose = true
+                finish()
+            }
             return
         }
 
@@ -235,14 +249,6 @@ class WarningActivity : AppCompatActivity() {
         url.removePrefix("https://").removePrefix("http://")
             .substringBefore('/').substringBefore('?').removePrefix("www.")
             .ifBlank { url.take(60) }
-
-    private fun goHomeAndFinish() {
-        startActivity(Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_HOME)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        })
-        finish()
-    }
 
     private fun logActivity(message: String, source: String, type: String, countAsBlocked: Boolean) {
         val prefs = getSharedPreferences("activity_log", Context.MODE_PRIVATE)

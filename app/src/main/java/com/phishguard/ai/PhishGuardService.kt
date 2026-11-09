@@ -104,11 +104,15 @@ class PhishGuardService : AccessibilityService() {
             }
 
             // ACTION_WARNING_CLOSED TIDAK membawa target_url — tangani dulu.
-                        if (intent?.action == ACTION_WARNING_CLOSED) {
-                if (backPendingAfterWarning) {
+            if (intent?.action == ACTION_WARNING_CLOSED) {
+                // Dua pemicu Back: penanda dari alur blokir biasa, atau
+                // permintaan eksplisit dari overlay (mode "sudah diblokir
+                // permanen", yang dulu melompat ke layar Home).
+                val diminta = intent.getBooleanExtra("request_back", false)
+                if (backPendingAfterWarning || diminta) {
                     backPendingAfterWarning = false
-                    // WarningActivity selesai (finish) setelah user menekan
-                    // blokir → sekarang aman kirim Back ke browser.
+                    // Overlay sudah benar-benar tertutup → aman kirim Back
+                    // ke peramban, kembali ke halaman sebelumnya.
                     scheduleBackAfterBlock()
                 }
                 return
@@ -280,13 +284,7 @@ class PhishGuardService : AccessibilityService() {
                 // === STRATEGI 1: findAccessibilityNodeInfosByViewId (Paling Akurat) ===
                 val rootNode = rootInActiveWindow
                 if (rootNode != null) {
-                    val viewIds = listOf(
-                        "com.android.chrome:id/url_bar",
-                        "com.sec.android.app.sbrowser:id/location_bar_edit_text",
-                        "org.mozilla.firefox:id/url_bar_title",
-                        "org.mozilla.firefox:id/mozac_browser_toolbar_url_view"
-                    )
-                    for (viewId in viewIds) {
+                    for (viewId in BROWSER_URL_VIEW_IDS) {
                         val nodes = rootNode.findAccessibilityNodeInfosByViewId(viewId)
                         if (nodes != null && nodes.isNotEmpty()) {
                             val node = nodes[0]
@@ -581,15 +579,74 @@ class PhishGuardService : AccessibilityService() {
      * halaman. Set mute-window agar page yang reload tak langsung warning lagi.
      */
     private fun scheduleBackAfterBlock() {
+        val blockedUrl = normalizeUrl(warningShownForUrl)
         Handler(Looper.getMainLooper()).postDelayed({
             try {
                 val ok = performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                backMuteUntil = System.currentTimeMillis() + 3500
-                Log.d(TAG, "Back-after-block executed=$ok (muted until +3.5s)")
+                backMuteUntil = System.currentTimeMillis() + BACK_MUTE_MS
+                Log.d(TAG, "Back-after-block executed=$ok")
+
+                // Tab yang dibuka langsung dari tautan (WhatsApp, SMS) tidak
+                // punya riwayat, jadi Back tidak punya tujuan dan pengguna
+                // tertinggal di situs berbahaya — peringatan lalu muncul
+                // berulang. Periksa hasilnya, dan hanya kalau Back terbukti
+                // gagal, mundur ke layar utama.
+                Handler(Looper.getMainLooper()).postDelayed({
+                    verifyLeftBlockedSite(blockedUrl, attempt = 1)
+                }, BACK_VERIFY_MS)
             } catch (e: Exception) {
                 Log.e(TAG, "back-after-block error", e)
             }
         }, 600)
+    }
+
+    /**
+     * Masih di URL yang sama setelah Back? Berarti tab itu tanpa riwayat.
+     *
+     * Diperiksa dua kali sebelum menyimpulkan. Pada jaringan lambat, Back
+     * ke halaman sebelumnya butuh waktu; sekali periksa bisa keliru menilai
+     * "tanpa riwayat" lalu memulangkan pengguna ke layar utama padahal
+     * Back-nya sebentar lagi berhasil.
+     */
+    private fun verifyLeftBlockedSite(blockedUrl: String, attempt: Int) {
+        if (blockedUrl.isBlank()) return
+        val current = normalizeUrl(readBrowserUrl())
+        if (current.isBlank() || current != blockedUrl) {
+            Log.d(TAG, "Back berhasil meninggalkan situs.")
+            return
+        }
+        if (attempt < BACK_VERIFY_ATTEMPTS) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                verifyLeftBlockedSite(blockedUrl, attempt + 1)
+            }, BACK_VERIFY_MS)
+            return
+        }
+        Log.d(TAG, "Back tidak punya halaman tujuan — mundur ke layar utama.")
+        try {
+            performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            backMuteUntil = System.currentTimeMillis() + BACK_MUTE_MS
+        } catch (e: Exception) {
+            Log.e(TAG, "fallback home error", e)
+        }
+    }
+
+    /** Baca URL dari bilah alamat peramban yang sedang tampil. */
+    private fun readBrowserUrl(): String {
+        return try {
+            val root = rootInActiveWindow ?: return ""
+            var found = ""
+            for (viewId in BROWSER_URL_VIEW_IDS) {
+                val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
+                if (!nodes.isNullOrEmpty()) {
+                    val text = nodes[0]?.text?.toString().orEmpty()
+                    if (text.isNotBlank()) { found = text; break }
+                }
+            }
+            root.recycle()
+            found
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     /**
@@ -1003,6 +1060,21 @@ class PhishGuardService : AccessibilityService() {
         private const val PREF_BLACKLIST = "urls"
         private const val PREF_WHITELIST = "safe_urls"
         private const val ALERT_CHANNEL_ID = "phishguard_suspicious"
+
+        /** id bilah alamat tiap peramban, dipakai analisis dan verifikasi Back. */
+        private val BROWSER_URL_VIEW_IDS = listOf(
+            "com.android.chrome:id/url_bar",
+            "com.sec.android.app.sbrowser:id/location_bar_edit_text",
+            "org.mozilla.firefox:id/url_bar_title",
+            "org.mozilla.firefox:id/mozac_browser_toolbar_url_view"
+        )
+
+        /** Bisu sesaat setelah Back agar halaman yang memuat ulang tak memicu ulang. */
+        private const val BACK_MUTE_MS = 3500L
+        /** Jeda sebelum memastikan Back benar-benar meninggalkan situs. */
+        private const val BACK_VERIFY_MS = 1400L
+        /** Berapa kali diperiksa sebelum menyimpulkan Back tak punya tujuan. */
+        private const val BACK_VERIFY_ATTEMPTS = 2
 
         /** Jeda sebelum isi halaman diperiksa ulang. */
         private const val RESCAN_DELAY_MS = 2500L
