@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -346,41 +348,35 @@ class PhishGuardService : AccessibilityService() {
      * Mengambil SEMUA teks pesan yang sudah terlihat di layar.
      */
     private fun triggerWindowScan(packageName: String, sourceName: String) {
-        try {
-            // Delay kecil agar Telegram selesai render pesan ke view
-            Thread.sleep(500)
-            val rootNode = rootInActiveWindow ?: run {
-                Log.w(TAG, "triggerWindowScan: rootInActiveWindow = null")
-                return
+        // Use non-blocking delay to allow UI to render before scanning
+        Handler(Looper.getMainLooper()).postDelayed({
+            try {
+                val rootNode = rootInActiveWindow ?: run {
+                    Log.w(TAG, "triggerWindowScan: rootInActiveWindow = null")
+                    return@postDelayed
+                }
+                val messages = mutableListOf<String>()
+                collectAllMessageNodes(rootNode, messages, packageName)
+                rootNode.recycle()
+
+                Log.d(TAG, "Proactive scan: ${messages.size} teks ditemukan di $sourceName")
+
+                // Analisis SEMUA teks yang substansial (bukan hanya terpanjang)
+                val candidates = messages.filter { it.length > 20 && !isChromeUIText(it) }
+                if (candidates.isEmpty()) return@postDelayed
+
+                // Ambil teks terpanjang sebagai pesan terbaik
+                val bestMessage = candidates.maxByOrNull { it.length } ?: return@postDelayed
+                Log.d(TAG, "Scan terbaik: ${bestMessage.take(80)}")
+
+                lastDetectedMessage = bestMessage
+                pipeline?.analyzeMessageLayers(bestMessage, "", sourceName) { result ->
+                    handleLayeredMessageResult(result, bestMessage, sourceName)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "triggerWindowScan error", e)
             }
-            val messages = mutableListOf<String>()
-            collectAllMessageNodes(rootNode, messages, packageName)
-            rootNode.recycle()
-
-            Log.d(TAG, "Proactive scan: ${messages.size} teks ditemukan di $sourceName")
-            // Debug log semua teks yang tertangkap
-            messages.forEachIndexed { i, t -> Log.d(TAG, "  [$i] '${t.take(60)}'  |len=${t.length}") }
-
-            // Analisis SEMUA teks yang substansial (bukan hanya terpanjang)
-            val candidates = messages.filter { it.length > 20 && !isChromeUIText(it) }
-            Log.d(TAG, "Kandidat setelah filter: ${candidates.size}")
-
-            if (candidates.isEmpty()) {
-                Log.w(TAG, "triggerWindowScan: tidak ada kandidat pesan yang lolos filter")
-                return
-            }
-
-            // Ambil teks terpanjang sebagai pesan terbaik
-            val bestMessage = candidates.maxByOrNull { it.length } ?: return
-            Log.d(TAG, "Scan terbaik: ${bestMessage.take(80)}")
-
-            lastDetectedMessage = bestMessage
-            pipeline?.analyzeMessageLayers(bestMessage, "", sourceName) { result ->
-                handleLayeredMessageResult(result, bestMessage, sourceName)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "triggerWindowScan error", e)
-        }
+        }, 500)
     }
 
     /**
@@ -432,40 +428,12 @@ class PhishGuardService : AccessibilityService() {
     }
 
     /**
-     * Traverse accessibility tree untuk mengumpulkan teks pesan dari chat app.
-     */
-    private fun collectMessageText(node: AccessibilityNodeInfo?, sb: StringBuilder, depth: Int) {
-        if (node == null || depth > 12) return
-        val text = node.text?.toString()
-        val className = node.className?.toString() ?: ""
-        val viewId = node.viewIdResourceName ?: ""
-
-        if (text != null && text.length > 10) {
-            val isTimestamp = text.matches(Regex("\\d{1,2}[:.\\s]\\d{2}(\\s?[AP]M)?\\s?"))
-            val isShortLabel = text.length < 5
-            val isUIButton = text in listOf("Send", "Reply", "More", "Delete", "Like", "\uD83D\uDC4D", "OK", "Cancel")
-
-            if (!isTimestamp && !isShortLabel && !isUIButton &&
-                (className.contains("Text") || viewId.contains("message") || viewId.contains("text"))) {
-                if (sb.isNotEmpty()) sb.append(" ")
-                sb.append(text)
-            }
-        }
-
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            collectMessageText(child, sb, depth + 1)
-            child.recycle()
-        }
-    }
-
-    /**
      * Handler untuk hasil 3-Layer Pipeline.
      * Setiap layer yang detect threat memunculkan HITL overlay.
      */
     private fun handleLayeredMessageResult(result: LayeredResult, originalText: String, source: String) {
         if (!result.isThreat) {
-            sendLogToUI("\u2705 Pesan aman dari $source", source, "SAFE")
+            sendLogToUI("✅ Pesan aman dari $source", source, "SAFE")
             return
         }
 
@@ -495,14 +463,6 @@ class PhishGuardService : AccessibilityService() {
             source = source,
             extraThreatLayer = extraKey
         )
-    }
-
-    // Biarkan fungsi lama untuk kompatibilitas
-    private fun handleMessageAnalysisResult(result: AnalysisResult, fullMessage: String, source: String) {
-        if (result.isThreat) {
-            sendLogToUI("⚠️ Bahaya (Pesan): ${result.reason}", source, "SCAM")
-            launchMessageWarning(fullMessage, result.reason, source)
-        }
     }
 
     private fun launchWarning(url: String, reason: String, source: String, isPermanentBlock: Boolean = false) {

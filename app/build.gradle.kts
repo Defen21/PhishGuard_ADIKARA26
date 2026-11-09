@@ -10,6 +10,10 @@ android {
     namespace = "com.example.ai_project_singapore"
     compileSdk = 36
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = "com.example.ai_project_singapore"
         minSdk = 24
