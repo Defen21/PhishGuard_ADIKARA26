@@ -24,6 +24,7 @@ tidak lagi melindungi siapa pun.
 - [Blocklist luring 4,1 juta domain](#blocklist-luring-41-juta-domain)
 - [Angka yang terukur](#angka-yang-terukur)
 - [Membangun proyek](#membangun-proyek)
+- [Membuat APK rilis](#membuat-apk-rilis)
 - [Menyiapkan aplikasi di perangkat](#menyiapkan-aplikasi-di-perangkat)
 - [Catatan untuk pengembang](#catatan-untuk-pengembang)
 - [Struktur proyek](#struktur-proyek)
@@ -158,7 +159,7 @@ Peringatan yang salah tidak boleh menjegal pengguna:
 
 | Skor | Tindakan |
 |---|---|
-| **≥ 0,80** | Layar peringatan penuh. Setelah dikonfirmasi, peramban dikembalikan satu halaman, dengan jeda 3,5 detik agar halaman yang memuat ulang tidak memicu peringatan berulang. |
+| **≥ 0,80** | Layar peringatan penuh dengan tombol **"Laporkan dan keluar dari situs ini"**. Setelah ditekan, peramban dikembalikan satu halaman — bukan ditutup — dengan jeda 3,5 detik agar halaman yang memuat ulang tidak memicu peringatan berulang. |
 | **0,55 – 0,80** | Notifikasi biasa. Penjelajahan berjalan terus; pengguna bisa membuka detail bila ingin memblokir. |
 | **< 0,55** | Hanya dicatat di log aktivitas. |
 
@@ -321,6 +322,38 @@ official_urls/{hash}    { domain, brand, category, timestamp }
 ```
 
 ---
+
+## Membuat APK rilis
+
+```bash
+./gradlew assembleRelease
+# → app/build/outputs/apk/release/app-release.apk
+```
+
+**Kunci penandatangan.** Build release memakai `phishguard-release.jks`
+dengan kredensial di `keystore.properties`. Keduanya **tidak dilacak git**
+dan tidak boleh masuk repo. Bila `keystore.properties` tidak ada, build
+tetap berjalan tapi keluarannya belum ditandatangani dan tidak bisa
+dipasang.
+
+> **Simpan kunci itu baik-baik.** Android mengikat identitas aplikasi ke
+> sertifikat penandatangannya. Kalau kuncinya hilang, pengguna yang sudah
+> memasang versi lama **tidak bisa memperbarui** — mereka harus mencopot
+> dulu, dan seluruh data lokalnya ikut hilang.
+
+**Sidik jari kunci tertanam di aplikasi.** `AppIntegrityChecker` mencocokkan
+sertifikat penandatangan dengan `EXPECTED_SIGNATURE_HASH`, sehingga APK yang
+ditandatangani ulang orang lain menolak berjalan. Kalau kunci diganti, nilai
+itu **wajib** ikut diganti — kalau tidak, build release berikutnya menolak
+dirinya sendiri.
+
+**ProGuard.** Empat kelas dicari lewat `Class.forName` saat runtime, jadi
+namanya tidak boleh diobfuscate. Aturannya ada di `app/proguard-rules.pro`.
+Aturan itu sempat menunjuk paket lama `com.example.ai_project_singapore`
+selama berbulan-bulan setelah refactor — akibatnya tidak satu pun berlaku,
+dan build release akan menutup diri sendiri dengan dialog "aplikasi telah
+dimodifikasi" begitu dibuka. Kalau ada kelas baru yang dicari lewat nama,
+tambahkan `-keep`-nya di sana.
 
 ## Menyiapkan aplikasi di perangkat
 
@@ -571,10 +604,13 @@ JVM dan kelas heuristik memakainya untuk penelusuran.
 
 ## Sebelum rilis
 
-- [ ] Isi `AppIntegrityChecker.EXPECTED_SIGNATURE_HASH` dengan SHA-256
-      sertifikat penandatangan release. Selama masih placeholder, verifikasi
-      tanda tangan sengaja dilewati agar build release tidak mati sendiri.
-      Ambil dengan `keytool -list -v -keystore release.keystore | grep SHA256`.
+- [x] `AppIntegrityChecker.EXPECTED_SIGNATURE_HASH` sudah diisi dari
+      sertifikat `phishguard-release.jks`; verifikasi tanda tangan aktif.
+- [x] Aturan ProGuard diperbaiki ke paket `com.phishguard.ai`, dan build
+      release terverifikasi berjalan di perangkat.
+- [ ] Cadangkan `phishguard-release.jks` dan `keystore.properties` ke tempat
+      aman di luar mesin ini. Kehilangan keduanya berarti aplikasi tidak
+      bisa diperbarui lagi.
 - [ ] Siapkan `google-services.json` untuk proyek Firebase produksi. Berkas
       ini tidak dilacak git; tiap pengembang menaruh salinannya di `app/`.
 - [ ] Deploy `firestore.rules`, lalu pastikan `metadata/` dan `official_urls/`

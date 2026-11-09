@@ -1,39 +1,58 @@
-# Add project specific ProGuard rules here.
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# ─────────────────────────────────────────────────────────────────────────
+# Aturan ProGuard PhishGuard
+#
+# PENTING: seluruh aturan di berkas ini sebelumnya menunjuk paket lama
+# `com.example.ai_project_singapore` yang sudah tidak ada sejak refactor ke
+# `com.phishguard.ai`. Akibatnya tidak satu pun berlaku, dan build release
+# akan menutup diri sendiri saat dibuka: AppIntegrityChecker mencari
+# kelasnya lewat Class.forName, kelas itu tereobfuscate, pemeriksaan gagal,
+# lalu MainActivity menampilkan dialog "aplikasi telah dimodifikasi".
+# ─────────────────────────────────────────────────────────────────────────
 
-# === PhishGuard AI ProGuard Rules ===
+# Kelas yang dicari lewat nama saat runtime (AppIntegrityChecker.criticalClasses).
+# Nama-nama ini TIDAK boleh berubah, atau pemeriksaan integritas gagal.
+-keep class com.phishguard.ai.PhishGuardService { *; }
+-keep class com.phishguard.ai.core.security.AppIntegrityChecker { *; }
+-keep class com.phishguard.ai.receiver.SmsReceiver { *; }
+-keep class com.phishguard.ai.service.CallMonitorService { *; }
 
-# Keep service classes (required by Android system)
--keep class com.example.ai_project_singapore.PhishGuardService { *; }
--keep class com.example.ai_project_singapore.service.CallMonitorService { *; }
--keep class com.example.ai_project_singapore.receiver.SmsReceiver { *; }
--keep class com.example.ai_project_singapore.ui.WarningActivity { *; }
--keep class com.example.ai_project_singapore.MainActivity { *; }
+# Komponen yang dirujuk AndroidManifest lewat nama.
+-keep class com.phishguard.ai.MainActivity { *; }
+-keep class com.phishguard.ai.ui.WarningActivity { *; }
+-keep class com.phishguard.ai.service.SmsNotificationInterceptorService { *; }
 
-# Keep integrity checker (needed for hash consistency)
--keep class com.example.ai_project_singapore.core.security.AppIntegrityChecker { *; }
--keep class com.example.ai_project_singapore.core.security.AppIntegrityChecker$IntegrityResult { *; }
+# Kontrak provider AI: ditukar-pasang, jadi bentuknya harus utuh.
+-keep interface com.phishguard.ai.core.ai.AIModelProvider { *; }
+-keep class com.phishguard.ai.core.ai.AnalysisInput { *; }
+-keep class com.phishguard.ai.core.ai.AnalysisResult { *; }
+-keep class com.phishguard.ai.core.ai.InputType { *; }
+-keep class com.phishguard.ai.core.ai.ThreatCategory { *; }
+-keep class com.phishguard.ai.core.ai.LayeredResult { *; }
+-keep class com.phishguard.ai.core.ai.ThreatLayer { *; }
 
-# Keep AI interfaces (for plug-and-play)
--keep interface com.example.ai_project_singapore.core.ai.AIModelProvider { *; }
--keep class com.example.ai_project_singapore.core.ai.AnalysisInput { *; }
--keep class com.example.ai_project_singapore.core.ai.AnalysisResult { *; }
--keep class com.example.ai_project_singapore.core.ai.InputType { *; }
--keep class com.example.ai_project_singapore.core.ai.ThreatCategory { *; }
+# Entity & DAO Room: dipetakan lewat refleksi dari nama field.
+-keep class com.phishguard.ai.data.db.** { *; }
+-keep class com.phishguard.ai.data.ActivityLogItem { *; }
+-keep class com.phishguard.ai.data.ActivityLogItem$LogType { *; }
 
-# Keep Room database entities and DAOs
--keep class com.example.ai_project_singapore.data.db.** { *; }
+# Firestore memetakan dokumen ke objek lewat nama properti.
+-keepclassmembers class com.phishguard.ai.** {
+    public <init>();
+    public void set*(***);
+    public *** get*();
+}
 
-# TensorFlow Lite (uncomment when AI team integrates)
-# -keep class org.tensorflow.** { *; }
-# -dontwarn org.tensorflow.**
-
-# Gson
+# Gson: nama field jadi kunci JSON.
 -keep class com.google.gson.** { *; }
+-keepclassmembers,allowobfuscation class * {
+    @com.google.gson.annotations.SerializedName <fields>;
+}
+
+# TensorFlow Lite (opsional, dipakai bila model dipasang).
+-keep class org.tensorflow.lite.** { *; }
+-dontwarn org.tensorflow.**
+
 -keepattributes Signature
 -keepattributes *Annotation*
-
-# General
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile

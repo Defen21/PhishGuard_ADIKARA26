@@ -65,12 +65,12 @@ class AppIntegrityChecker(private val context: Context) {
     }
 
     /**
-     * Layer 1: Verify APK signature matches expected hash.
-     * If the APK is re-signed with a different key, this will fail.
+     * Lapis 1: cocokkan sidik jari sertifikat penandatangan APK.
      *
-     * TODO: Replace EXPECTED_SIGNATURE_HASH with your actual release key hash.
-     *       Generate with: keytool -list -v -keystore your.keystore
-     *       Then SHA-256 of the signing certificate.
+     * Kalau APK ditandatangani ulang orang lain — modus umum menyisipkan
+     * kode ke aplikasi keamanan lalu menyebarkannya — pemeriksaan ini gagal
+     * dan aplikasi menolak berjalan. Build debug dilewati agar pengembangan
+     * tidak terhambat.
      */
     private fun verifySignature(): Boolean {
         return try {
@@ -223,9 +223,14 @@ class AppIntegrityChecker(private val context: Context) {
     companion object {
         private const val PLACEHOLDER_HASH = "REPLACE_WITH_YOUR_RELEASE_KEY_HASH"
 
-        // Isi dengan SHA-256 sertifikat penandatangan release sebelum rilis.
-        // Generate: keytool -list -v -keystore release.keystore | grep SHA256
-        // Selama masih placeholder, verifikasi tanda tangan dilewati (lihat verifySignature).
-        private const val EXPECTED_SIGNATURE_HASH = PLACEHOLDER_HASH
+        // SHA-256 sertifikat penandatangan release (phishguard-release.jks).
+        // Diisi dari build release pertama; verifikasi tanda tangan kini
+        // AKTIF, sehingga APK yang ditandatangani ulang orang lain ditolak.
+        // Build debug tetap melewati pemeriksaan ini (lihat verifySignature).
+        //
+        // Kalau kunci penandatangan diganti, nilai ini WAJIB ikut diganti —
+        // kalau tidak, build release berikutnya menolak dirinya sendiri.
+        private const val EXPECTED_SIGNATURE_HASH =
+            "5A:31:6A:92:70:78:DA:E6:12:74:3B:0D:96:D9:BB:DC:89:D8:86:E1:93:91:9A:82:66:7D:99:A3:0F:B9:1A:93"
     }
 }

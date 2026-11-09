@@ -43,3 +43,12 @@ app/google-services.json
 /app/build/
 /.gradle/
 google-services.json
+
+# Kunci penandatangan release — JANGAN pernah masuk repo.
+phishguard-release.jks
+*.jks
+*.keystore
+keystore.properties
+
+# Keluaran APK siap edar
+dist/
