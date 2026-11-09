@@ -34,6 +34,69 @@ class UrlRiskScorerTest {
         assertLevel(UrlRiskScorer.Level.SAFE, "https://www.bri.co.id/")
     }
 
+    // ── Regresi false-positive ──────────────────────────────────────────
+    // Dipulihkan setelah sempat terhapus pada penggabungan. Perilaku yang
+    // dijaga di sini adalah alasan skoring dibuat berbobot; tanpa test ini
+    // tidak ada yang menahan kalau ambangnya bergeser lagi.
+
+    @Test
+    fun `halaman login di situs biasa bukan phishing`() {
+        // Versi lama: langsung blokir 0,88 hanya karena kata "login" di path.
+        assertLevel(UrlRiskScorer.Level.SAFE, "https://situskampus.ac.id/login")
+        assertLevel(UrlRiskScorer.Level.SAFE, "https://myapp.com/account/update")
+    }
+
+    @Test
+    fun `domain multi-kata bertanda hubung wajar`() {
+        // Versi lama: 2 tanda hubung → blokir 0,62.
+        assertLevel(UrlRiskScorer.Level.SAFE, "https://toko-kopi-enak.com")
+        assertLevel(UrlRiskScorer.Level.SAFE, "https://the-blackbird-cafe.com/menu")
+    }
+
+    @Test
+    fun `kata biasa yang memuat nama brand tidak dianggap peniruan`() {
+        // Versi lama: substring bebas → "bri" cocok ke "bridge", "dana" ke "cendana".
+        assertLevel(UrlRiskScorer.Level.SAFE, "https://bridge.com")
+        assertLevel(UrlRiskScorer.Level.SAFE, "https://cendana-catering.co.id")
+        assertTrue(!UrlRiskScorer.brandMatches("bridge.com", "bri"))
+        assertTrue(!UrlRiskScorer.brandMatches("fabrics.co.id", "bri"))
+    }
+
+    @Test
+    fun `TLD niaga populer tidak otomatis berbahaya`() {
+        assertLevel(UrlRiskScorer.Level.SAFE, "https://batikpekalongan.shop")
+        assertLevel(UrlRiskScorer.Level.SAFE, "https://beritabaru.online/politik")
+    }
+
+    @Test
+    fun `satu sinyal lemah tidak pernah cukup untuk memblokir`() {
+        val v = verdict("https://tokobaru.xyz/login")
+        assertTrue("skor=${v.score}", v.level != UrlRiskScorer.Level.DANGEROUS)
+    }
+
+    @Test
+    fun `peniruan brand dengan afiks tertangkap`() {
+        assertLevel(UrlRiskScorer.Level.DANGEROUS, "http://klikbca-verifikasi.tk/login")
+        assertLevel(UrlRiskScorer.Level.DANGEROUS, "https://bca-mobile.vercel.app/akun")
+        assertTrue(UrlRiskScorer.brandMatches("bankbri-online.xyz", "bri"))
+        assertTrue(UrlRiskScorer.brandMatches("bca123.xyz", "bca"))
+    }
+
+    @Test
+    fun `satu istilah judi ambigu tidak memblokir situs sah`() {
+        // "slot" dan "toto" juga nama usaha sah. Satu istilah ambigu hanya
+        // boleh memicu pemeriksaan, bukan vonis.
+        assertLevel(UrlRiskScorer.Level.SUSPICIOUS, "https://slotcarshop.com")
+        assertEquals(1, JudolWordlist.countAmbiguousSignals("slotcarshop.com"))
+    }
+
+    @Test
+    fun `dua istilah judi ambigu tetap diblokir`() {
+        // Domain judol asli menumpuk istilah, jadi tetap tertangkap.
+        assertLevel(UrlRiskScorer.Level.DANGEROUS, "https://totoslot88.com")
+        assertLevel(UrlRiskScorer.Level.DANGEROUS, "https://rtpslotgacor.net")
+    }
+
     @Test
     fun `domain benign besar tidak terblokir`() {
         assertLevel(UrlRiskScorer.Level.SAFE, "https://google.com/search?q=slot+gacor")

@@ -148,9 +148,20 @@ object UrlRiskScorer {
         // halaman adalah promosi judi — keduanya indikasi kuat situs judol.
         // Ditaruh sebelum sinyal lain supaya judol TIDAK PERNAH bisa turun
         // ke SUSPICIOUS karena sinyal lain menambah/mengurangi bobot.
-        if (JudolWordlist.hasStrongSignal(hostname)) {
+        // Istilah tak ambigu ("gacor", "sbobet", "casino") → satu sudah cukup.
+        // Istilah ambigu ("slot", "toto", "olympus") → butuh dua, karena
+        // sendirian ia menjerat toto.co.jp, slotcarshop.com, olympus.com.
+        // Domain judol asli hampir selalu menumpuk beberapa istilah, jadi
+        // deteksinya tidak berkurang — yang hilang cuma salah tangkapnya.
+        val ambiguousInHost = JudolWordlist.countAmbiguousSignals(hostname)
+        if (JudolWordlist.hasUnambiguousSignal(hostname) || ambiguousInHost >= 2) {
             val hit = JudolWordlist.scan(hostname)
             return Verdict(0.99f, listOf(Signal("Nama domain memuat istilah judi online (${hit.summary})", 0.99f)), Level.DANGEROUS, hostname, registrable)
+        } else if (ambiguousInHost == 1) {
+            // Satu istilah ambigu saja: cukup untuk diperiksa, tidak untuk
+            // divonis. Dengan sinyal lain (TLD murah, angka, hosting gratis)
+            // ia tetap menembus ambang berbahaya.
+            signals += Signal("Nama domain memuat istilah yang lazim pada situs judi", 0.72f)
         } else if (pageText.isNotBlank() && JudolWordlist.hasStrongSignal(pageText)) {
             val hit = JudolWordlist.scan(pageText)
             if (JudolWordlist.isLikelyJudol(hit)) {
@@ -322,6 +333,9 @@ object UrlRiskScorer {
         "roblox.com", "paypal.com", "stripe.com", "wise.com", "revolut.com",
         "yahoo.com", "proton.me", "protonmail.com", "mail.com",
         "cloudflare.com", "amazonaws.com", "azure.com", "detik.com",
+        // Merek besar yang namanya kebetulan memuat jargon judi. Tanpa ini
+        // mereka hanya turun ke SUSPICIOUS; dengan ini benar-benar aman.
+        "olympus.com", "toto.co.jp", "rtp.pt", "bonanza.com", "zeus.com",
         "kompas.com", "tribunnews.com", "cnnindonesia.com", "liputan6.com"
     )
 }

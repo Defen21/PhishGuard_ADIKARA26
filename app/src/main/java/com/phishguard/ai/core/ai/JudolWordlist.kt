@@ -14,29 +14,56 @@ class JudolWordlist {
         private data class Entry(val terms: List<String>, val weight: Int)
 
         /**
-         * Istilah judi berkeyakinan tinggi. Konten halaman hanya boleh
-         * dinaikkan jadi ancaman bila ada minimal satu istilah di sini.
+         * TIDAK AMBIGU — istilah ini hampir mustahil muncul di domain sah,
+         * atau memang menandakan judi menurut definisinya (casino, poker).
+         * Satu kecocokan sudah cukup untuk memvonis.
          *
-         * DIKALIBRASI dari 1,8 juta domain judi Lyra (lihat
-         * tools/blocklist_report.md). Penambahan dari data: rtp (177×),
-         * gacor (86×), mpo (57×), maxwin, zeus, mahjong.
+         * Dikalibrasi dari dua sumber: 1,8 juta nama domain judi
+         * (tools/blocklist_report.md) dan 989 halaman judol nyata
+         * (tools/page_terms_report.md).
          *
-         * Yang SENGAJA TIDAK diambil meski lift-nya tinggi: kata Indonesia
-         * biasa seperti "daftar", "situs", "klik", "cuan", "jitu", "menang",
-         * "terbaik", "mantap". Lift-nya tampak tinggi hanya karena acuan
-         * domain sah (Tranco global) kurang memuat situs berbahasa
-         * Indonesia — memakainya akan memblokir situs lokal yang wajar.
-         * Nama merek judi (kudetabet, jojobet, madridbet) juga tidak
-         * dimasukkan: domain persisnya sudah tertangkap DomainBlocklist,
-         * sedangkan daftar ini untuk menebak domain yang BELUM terdaftar.
+         * Yang SENGAJA DITOLAK meski lift-nya tinggi: kata Indonesia biasa
+         * ("daftar", "situs", "klik", "cuan", "menang") — lift-nya tampak
+         * besar hanya karena korpus pembanding kurang memuat situs
+         * berbahasa Indonesia. Nama merek judi juga tidak dimasukkan:
+         * domain persisnya sudah ditangani DomainBlocklist, sedangkan
+         * daftar ini bertugas menebak domain yang BELUM terdaftar.
          */
-        private val STRONG = listOf(
-            "slot", "judi", "togel", "gacor", "kasino", "casino", "pragmatic",
-            "sbobet", "olympus", "starlight", "aztec", "bonanza", "slot88",
-            "habanero", "microgaming", "scatter", "maxwin", "bandarq",
-            "pragmaticplay", "rtp", "mpo", "parlay", "mahjong", "zeus",
-            "baccarat", "roulette", "toto", "bolatangkas", "sportsbook"
+        private val STRONG_UNAMBIGUOUS = listOf(
+            "judi", "togel", "gacor", "maxwin", "sbobet", "bandarq",
+            "pragmaticplay", "slot88", "bolatangkas", "sportsbook", "kasino",
+            "casino", "poker", "baccarat", "roulette", "parlay", "habanero",
+            "microgaming", "jackpot", "taruhan",
+            // Ditambahkan dari penambangan 989 halaman judol nyata
+            // (tools/page_terms_report.md): nama penyedia game, dompet judi,
+            // dan mekanik slot. Semuanya nyaris tak punya pemakaian sah.
+            "netent", "skrill", "neteller", "paysafecard", "megaways",
+            "blackjack", "freespin", "freebet", "sportsbet", "judibola",
+            "situsjudi", "linkalternatif", "depositpulsa"
         )
+
+        /**
+         * AMBIGU — istilah judi yang juga kata/merek sah. Dicocokkan sebagai
+         * substring (karena domain judol menyambung kata: "slotgacor"), jadi
+         * sendirian ia akan menjerat situs yang tidak bersalah:
+         *
+         *   toto     → toto.co.jp (produsen sanitasi Jepang)
+         *   slot     → slotcarshop.com (toko mainan slot car)
+         *   olympus  → olympus.com (kamera & alat medis)
+         *   rtp      → rtp.pt (penyiar nasional Portugal)
+         *   bonanza  → bonanza.com (e-commerce)
+         *
+         * Karena itu istilah di sini butuh SATU sinyal judi lagi sebelum
+         * memvonis. Domain judol sungguhan hampir selalu menumpuk beberapa
+         * ("slotgacor", "totomaxwin", "slot88maxwin"), jadi deteksinya tidak
+         * berkurang — yang hilang justru salah tangkapnya.
+         */
+        private val STRONG_AMBIGUOUS = listOf(
+            "slot", "toto", "rtp", "mpo", "zeus", "olympus", "starlight",
+            "aztec", "bonanza", "mahjong", "scatter", "pragmatic"
+        )
+
+        private val STRONG = STRONG_UNAMBIGUOUS + STRONG_AMBIGUOUS
 
         private val LIST = listOf(
             Entry(listOf("judi", "togel", "slot", "kasino", "bandar"), 4),
@@ -79,10 +106,25 @@ class JudolWordlist {
          * menaikkan page-content jadi ancaman (FP-reduction): "bonus gratis"
          * saja belum cukup; harus ada slot/judi/togel/gacor/etc.
          */
-        fun hasStrongSignal(text: String): Boolean {
-            if (text.isBlank()) return false
+        fun hasStrongSignal(text: String): Boolean =
+            matches(text, STRONG).isNotEmpty()
+
+        /** Istilah judi yang tak punya pemakaian sah — satu saja sudah cukup. */
+        fun hasUnambiguousSignal(text: String): Boolean =
+            matches(text, STRONG_UNAMBIGUOUS).isNotEmpty()
+
+        /**
+         * Berapa istilah AMBIGU yang cocok. Dipakai pemanggil untuk menuntut
+         * dua sinyal sebelum memvonis, supaya "toto.co.jp" dan
+         * "slotcarshop.com" tidak ikut terjaring.
+         */
+        fun countAmbiguousSignals(text: String): Int =
+            matches(text, STRONG_AMBIGUOUS).size
+
+        private fun matches(text: String, terms: List<String>): List<String> {
+            if (text.isBlank()) return emptyList()
             val t = text.lowercase()
-            return STRONG.any { term ->
+            return terms.filter { term ->
                 if (term.length >= 4) {
                     t.contains(term)
                 } else {
