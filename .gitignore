@@ -52,3 +52,10 @@ keystore.properties
 
 # Keluaran APK siap edar
 dist/
+
+# PDF hasil kompilasi LaTeX (bisa dibuat ulang)
+docs/*.pdf
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.toc

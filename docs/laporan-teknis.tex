@@ -1,0 +1,411 @@
+% =====================================================================
+%  LAPORAN TEKNIS — PhishGuard AI
+%  Template LaTeX. Kompilasi: pdflatex laporan-teknis.tex (2x untuk ToC)
+%
+%  Bagian yang PERLU DIISI ditandai  % >>> ISI:  — cari dengan Ctrl-F.
+%  Angka teknis di dalam sudah diisi dari pengukuran nyata proyek;
+%  jangan diubah tanpa memverifikasi ulang ke kode/APK.
+% =====================================================================
+\documentclass[11pt,a4paper]{article}
+
+% ── Paket ────────────────────────────────────────────────────────────
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+% babel sengaja tidak dipakai: locale Indonesia tidak ada di semua
+% instalasi TeX. Teks Indonesia tetap render sempurna tanpa babel.
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{caption}
+
+% ── Warna brand ──────────────────────────────────────────────────────
+\definecolor{brandblue}{HTML}{2563EB}
+\definecolor{navy}{HTML}{0F172A}
+\definecolor{slate}{HTML}{64748B}
+\definecolor{codebg}{HTML}{F1F5F9}
+
+% ── Hyperlink ────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true, linkcolor=brandblue, urlcolor=brandblue,
+  citecolor=brandblue, pdftitle={Laporan Teknis PhishGuard AI},
+}
+
+% ── Judul bagian (tanpa paket tambahan; hanya xcolor) ────────────────
+\makeatletter
+\renewcommand\section{\@startsection{section}{1}{\z@}%
+  {-3.5ex \@plus -1ex \@minus -.2ex}{1.3ex \@plus.2ex}%
+  {\normalfont\Large\bfseries\color{navy}}}
+\renewcommand\subsection{\@startsection{subsection}{2}{\z@}%
+  {-3.25ex\@plus -1ex \@minus -.2ex}{1ex \@plus.2ex}%
+  {\normalfont\large\bfseries\color{brandblue}}}
+\makeatother
+
+% ── Header/footer ────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small\color{slate}PhishGuard AI}
+\rhead{\small\color{slate}Laporan Teknis}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Gaya kode ────────────────────────────────────────────────────────
+\lstset{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{brandblue}\bfseries,
+  commentstyle=\color{slate}\itshape,
+  stringstyle=\color{navy},
+  numbers=none, frame=single, rulecolor=\color{slate!40},
+  breaklines=true, showstringspaces=false,
+  aboveskip=1em, belowskip=1em,
+}
+
+% ── Kotak ringkas ────────────────────────────────────────────────────
+\newcommand{\keyfact}[2]{\textbf{\color{brandblue}#1}\,: #2}
+
+% =====================================================================
+\begin{document}
+
+% ── HALAMAN JUDUL ────────────────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+
+  % >>> ISI: ganti dengan logo bila mau — taruh file di folder yang sama
+  % \includegraphics[width=0.35\textwidth]{logo.png}\\[1.5cm]
+
+  {\Huge\bfseries\color{navy} PhishGuard AI\par}
+  \vspace{0.4cm}
+  {\Large\color{slate} Sistem Perlindungan Anti-Penipuan Digital\\
+   Berpusat pada Manusia untuk Pengguna Indonesia\par}
+  \vspace{2cm}
+
+  {\large\bfseries LAPORAN TEKNIS\par}
+  \vspace{0.3cm}
+  {\color{slate} Versi Aplikasi 2.0\par}
+  \vspace{3cm}
+
+  \begin{tabular}{rl}
+    \textbf{Tim} & \rule{5cm}{0.4pt} \\[4pt]         % >>> ISI: nama tim
+    \textbf{Anggota} & \rule{5cm}{0.4pt} \\[4pt]     % >>> ISI: anggota 1
+                     & \rule{5cm}{0.4pt} \\[4pt]     % >>> ISI: anggota 2
+    \textbf{Track} & Human-Centric Security \\[4pt]
+    \textbf{Tanggal} & \rule{5cm}{0.4pt} \\[4pt]     % >>> ISI: tanggal
+    \textbf{Repositori} & \url{https://github.com/fsrsr/Phisguard-AI} \\
+  \end{tabular}
+
+  \vfill
+  {\small\color{slate} Dokumen ini dibuat sebagai template; bagian bertanda
+  ``ISI'' perlu dilengkapi. Seluruh angka teknis berasal dari pengukuran
+  langsung terhadap kode dan APK.\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% =====================================================================
+\section{Ringkasan Eksekutif}
+% =====================================================================
+PhishGuard AI adalah aplikasi Android yang melindungi pengguna Indonesia
+dari penipuan digital pada \emph{titik paparan}: tautan phishing di
+peramban, pesan penipuan di SMS dan WhatsApp, situs judi online (judol),
+dan panggilan penipuan. Berbeda dari alat keamanan konvensional, setiap
+peringatan dijelaskan dalam bahasa Indonesia yang dapat dipahami, sehingga
+tiap ancaman menjadi kesempatan belajar bagi pengguna.
+
+Prinsip yang mengikat seluruh keputusan teknisnya:
+\begin{quote}
+  \itshape ``Peringatan palsu sama merusaknya dengan ancaman yang
+  terlewat.''
+\end{quote}
+Alat yang terlalu sering salah akan diabaikan, dan sejak itu berhenti
+melindungi. Karena itu penekanan utama proyek ini bukan sekadar mendeteksi
+lebih banyak, melainkan \textbf{menekan salah-blokir} sambil tetap
+menangkap ancaman nyata.
+
+\vspace{0.5em}
+\noindent\textbf{Capaian terukur:}
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item Salah-blokir domain populer turun dari \textbf{6{,}02\%} menjadi
+        \textbf{0{,}45\%}.
+  \item \textbf{4{,}1 juta} domain ancaman diperiksa luring dalam aset
+        \textbf{9{,}4\,MB}.
+  \item Kosakata judol dikalibrasi dari \textbf{1{,}8 juta} domain judi
+        nyata.
+  \item Terverifikasi berjalan di perangkat nyata (Vivo V2322, Android~14).
+\end{itemize}
+
+% =====================================================================
+\section{Latar Belakang dan Rumusan Masalah}
+% =====================================================================
+Studi Kaspersky (2023) menemukan 64\% insiden siber berakar pada kesalahan
+manusia. Di Indonesia, paparannya akut: phishing perbankan, tautan judol
+yang menyebar lewat WhatsApp, serta SMS penipuan yang mengatasnamakan
+kurir, bantuan sosial, dan pinjaman ilegal.
+
+Perlindungan yang ada gagal melayani pengguna Indonesia dalam tiga hal:
+\begin{enumerate}[leftmargin=1.6em,itemsep=3pt]
+  \item \textbf{Berbahasa Inggris} — peringatan tidak terbaca oleh yang
+        paling rentan.
+  \item \textbf{Tidak tersetel untuk ancaman lokal} — judol terlewat sama
+        sekali, begitu pula spam yang sengaja dikaburkan.
+  \item \textbf{Terlalu sering salah} — pemblokiran berlebih membuat
+        pengguna belajar bahwa peringatan biasanya keliru, lalu
+        mengabaikannya secara refleks, termasuk yang benar.
+\end{enumerate}
+
+Pemblokiran berlebih adalah mode kegagalan yang jarang diukur. Pengujian
+pendekatan berbasis kata kunci konvensional menunjukkan ia menandai 6\%
+domain terpopuler dunia sebagai phishing, dan memblokir setiap situs yang
+memiliki halaman \texttt{/login}. Selain itu, peringatan yang hanya
+berbunyi ``PHISHING DETECTED'' tidak mengajarkan apa pun; pengguna tidak
+memperoleh kemampuan mengenali serangan berikutnya.
+
+% =====================================================================
+\section{Arsitektur Sistem}
+% =====================================================================
+Aplikasi ditulis dalam Kotlin (\textasciitilde8.700 baris),
+\keyfact{minSdk}{24 (Android 7.0)}, \keyfact{targetSdk}{36}. Seluruh
+analisis berjalan di perangkat; tidak ada data penjelajahan yang dikirim
+ke luar.
+
+\subsection{Empat Kanal Masuk}
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l X l@{}}
+  \toprule
+  \textbf{Kanal} & \textbf{Yang dipantau} & \textbf{Mekanisme Android} \\
+  \midrule
+  Peramban & URL di 24 peramban dan WebView & \texttt{AccessibilityService} \\
+  SMS & Pesan masuk aplikasi bawaan & \texttt{BroadcastReceiver} \\
+  Chat \& notifikasi & WhatsApp, Telegram, dll. & \texttt{NotificationListenerService} \\
+  Panggilan & Transkripsi percakapan langsung & \texttt{SpeechRecognizer} + FGS \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Pipeline Analisis URL}
+\texttt{AnalysisPipeline} memeriksa berurutan, dari yang paling pasti ke
+yang paling menebak. Pemeriksaan yang dapat keliru selalu ditaruh
+\emph{setelah} daftar putih, sehingga kekeliruannya tidak pernah mengenai
+situs tepercaya.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}c X l@{}}
+  \toprule
+  \# & \textbf{Langkah} & \textbf{Bila cocok} \\
+  \midrule
+  1 & Daftar putih domain resmi (BCA, BRI, OJK, \ldots) & \textbf{aman, berhenti} \\
+  2 & Database phishing lokal (URL persis) & ancaman 1{,}00 \\
+  3 & Database phishing per-host & ancaman $\geq$0{,}90 \\
+  4 & Blocklist global (Bloom filter, 4{,}1 juta domain) & ancaman 0{,}95 \\
+  5 & Skoring heuristik (\texttt{UrlRiskScorer}) & sesuai skor \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+Daftar putih sengaja didahulukan: entri dari laporan komunitas maupun umpan
+publik bisa keliru atau disuntik pihak lain, dan domain bank tidak boleh
+dapat dijatuhkan oleh sumber semacam itu.
+
+% =====================================================================
+\section{Solusi: Empat Keputusan Desain}
+% =====================================================================
+
+\subsection{Skoring Berbobot, Bukan Pencocokan Kata Kunci}
+Setiap sinyal hanya \emph{menyumbang} bobot; hanya akumulasinya yang
+bertindak. Satu sinyal lemah tidak pernah cukup untuk memblokir.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}X c X@{}}
+  \toprule
+  \textbf{Sinyal} & \textbf{Bobot} & \textbf{Catatan} \\
+  \midrule
+  Peniruan brand & 0{,}75 & 0{,}45 untuk brand yang juga kata umum \\
+  Istilah judi pada hostname & 0{,}72 & tidak memblokir sendirian \\
+  Alamat IP mentah & 0{,}55 & \\
+  Domain punycode (\texttt{xn-{}-}) & 0{,}50 & huruf menyerupai latin \\
+  TLD terbukti disalahgunakan & 0{,}30 & dikalibrasi dari data \\
+  Kata sensitif di \emph{path} & 0{,}12 & hampir semua situs punya \texttt{/login} \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+Dampaknya terukur: kata \texttt{login} di path yang dulu memicu blokir
+0{,}88 kini hanya 0{,}12. Pencocokan brand tidak pernah memakai substring
+bebas --- hanya token utuh, token+afiks dikenal (\texttt{klikbca}), atau
+typosquat berjarak edit 1 --- sehingga \texttt{bri-mobile.xyz} tertangkap
+tetapi \texttt{bridge.com} tidak.
+
+\subsection{Respons Bertingkat}
+Peringatan yang salah tidak boleh menjegal pengguna.
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l X@{}}
+  \toprule
+  \textbf{Skor} & \textbf{Tindakan} \\
+  \midrule
+  $\geq$ 0{,}80 & Layar peringatan penuh; situs dihentikan \\
+  0{,}55--0{,}80 & Notifikasi yang bisa diabaikan; penjelajahan lanjut \\
+  $<$ 0{,}55 & Hanya dicatat di log \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+Deteksi yang belum pasti tidak membajak layar, sehingga pengguna tetap
+berpikir alih-alih patuh membabi buta --- sekaligus menjawab kekhawatiran
+bahwa otomasi menurunkan kewaspadaan.
+
+\subsection{Alasan Berbahasa Manusia}
+Alih-alih ``PHISHING DETECTED'', pengguna membaca \emph{mengapa}:
+\begin{quote}
+  \itshape ``Memakai nama `bca' padahal domainnya (klikbca-verifikasi.tk)
+  bukan milik resminya. Nama domain memuat kata `verifikasi' yang khas
+  halaman pencuri data. Domain memakai akhiran .tk yang banyak dipakai
+  penipuan.''
+\end{quote}
+Pengguna mempelajari konsep peniruan brand tepat saat mengalaminya ---
+bentuk paling efektif dalam pendidikan keamanan.
+
+\subsection{Human-in-the-Loop}
+Pengguna dapat membantah vonis sistem dalam satu ketukan, dan keputusan itu
+diingat permanen lintas sesi. Sistem boleh salah; pengguna yang memutuskan.
+
+% =====================================================================
+\section{Komponen Kunci}
+% =====================================================================
+
+\subsection{Blocklist Luring 4,1 Juta Domain}
+Sumber: blocklist publik Lyra (ITSEC Research). Data mentah lebih dari
+80\,MB dipampatkan menjadi \textbf{Bloom filter 9{,}4\,MB} berisi
+4.108.088 domain (phishing, malware, judi), dipetakan ke memori
+(\texttt{mmap}) langsung dari APK dengan pencarian $O(1)$ tanpa jaringan.
+
+Sifat Bloom filter: dapat keliru menyatakan sebuah domain terdaftar, tapi
+tidak pernah sebaliknya. Peluangnya disetel 0{,}01\% dan terukur 0{,}0085\%.
+Domain resmi diperiksa lebih dulu, sehingga kekeliruan itu tidak mengenai
+situs tepercaya.
+
+\subsection{Kalibrasi dari Data, Bukan Tebakan}
+TLD tersangka dan kata penanda judi \emph{tidak} ditebak. Dengan
+membandingkan 4{,}1 juta domain jahat terhadap 1 juta domain populer
+(Tranco), dihitung \emph{lift} tiap TLD --- pangsanya di daftar jahat
+dibagi pangsanya di daftar sah:
+\begin{center}
+\begin{tabular}{@{}lr lr@{}}
+  \toprule
+  TLD & lift & TLD & lift \\
+  \midrule
+  \texttt{.tk} & 88$\times$ & \texttt{.click} & 21$\times$ \\
+  \texttt{.gdn} & 86$\times$ & \texttt{.sbs} & 18$\times$ \\
+  \texttt{.stream} & 82$\times$ & \texttt{.cyou} & 13$\times$ \\
+  \bottomrule
+\end{tabular}
+\end{center}
+Kata judol \texttt{rtp} (lift 177$\times$), \texttt{gacor} (86$\times$),
+dan \texttt{mpo} (57$\times$) diadopsi. Kata Indonesia umum seperti
+\texttt{daftar} dan \texttt{situs} sengaja ditolak meski lift-nya tinggi,
+karena acuan Tranco kurang memuat situs berbahasa Indonesia.
+
+\subsection{Deteksi Spam yang Dikaburkan}
+Spam judol lokal ditulis untuk lolos penyaring kata:
+\begin{center}
+\ttfamily D e p 0 \quad M4X'W1N \quad Mahy'0ng \quad Gratiss
+\end{center}
+Modul \texttt{TextNormalizer} membalik empat teknik sekaligus (huruf
+berspasi, leetspeak, tanda baca penyisip, huruf berulang) sehingga
+terurai menjadi \texttt{depo}, \texttt{maxwin}, \texttt{mahjong},
+\texttt{gratis}. Hasil normalisasi dipakai \emph{bersama} teks asli, bukan
+menggantikannya --- melipat angka merusak makna sah seperti ``100 juta''.
+
+\subsection{Peta Pola Ancaman}
+Fitur opsional yang memetakan ancaman terkonfirmasi ke tiga dimensi:
+spasial (titik rawan), temporal (rentang waktu), dan kategorikal, dengan
+ekspor GeoJSON. Dibangun dengan tiga pagar privasi: \emph{opt-in} dan mati
+secara bawaan, lokasi kasar yang dibulatkan \textasciitilde1\,km, dan
+tidak pernah melacak --- hanya membaca lokasi terakhir yang diketahui
+sistem saat ancaman dikonfirmasi.
+
+% =====================================================================
+\section{Keamanan dan Privasi}
+% =====================================================================
+\begin{itemize}[leftmargin=1.4em,itemsep=3pt]
+  \item \textbf{Analisis di perangkat.} Yang keluar hanya URL yang
+        \emph{dikonfirmasi pengguna} sebagai penipuan, untuk basis data
+        komunitas. Riwayat penjelajahan tidak pernah dikirim.
+  \item \textbf{Aturan Firestore.} Membatasi bentuk tulisan, mengunci
+        daftar putih resmi dari klien, dan menutup penghapusan --- sudah
+        diterapkan dan diverifikasi terhadap basis data produksi.
+  \item \textbf{Isi pesan tidak dicatat.} Notifikasi chat adalah
+        percakapan pribadi; hanya panjangnya yang dicatat.
+  \item \textbf{Integritas aplikasi.} \texttt{AppIntegrityChecker}
+        mencocokkan sidik jari sertifikat penandatangan; APK yang
+        ditandatangani ulang menolak berjalan.
+\end{itemize}
+
+% =====================================================================
+\section{Pengujian dan Verifikasi}
+% =====================================================================
+Logika deteksi diuji oleh \textbf{46 unit test} murni JVM (tanpa
+emulator), yang mengunci perilaku dua arah: situs normal tidak boleh
+diblokir, dan pola phishing nyata harus tertangkap.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}l c X@{}}
+  \toprule
+  \textbf{Berkas uji} & \textbf{Kasus} & \textbf{Fokus} \\
+  \midrule
+  \texttt{UrlRiskScorerTest} & 20 & FP situs normal + deteksi phishing nyata \\
+  \texttt{TextNormalizerTest} & 11 & spam yang dikaburkan \\
+  \texttt{MessageRuleEngineTest} & 10 & pola pesan SMS/chat \\
+  \texttt{DomainBlocklistTest} & 4 & kesepakatan algoritma Python$\leftrightarrow$Kotlin \\
+  \bottomrule
+\end{tabularx}
+\end{center}
+
+Verifikasi lapangan dilakukan pada perangkat nyata (Vivo V2322,
+Android~14): deteksi peramban, judol berbasis isi halaman, respons
+bertingkat, navigasi kembali setelah blokir, dan intersepsi notifikasi
+WhatsApp semuanya dikonfirmasi lewat log dan tangkapan layar.
+
+% =====================================================================
+\section{Batasan dan Pengembangan Lanjut}
+% =====================================================================
+Laporan ini menyatakan batasan secara terbuka:
+\begin{itemize}[leftmargin=1.4em,itemsep=3pt]
+  \item \textbf{Berbasis heuristik, bukan model pembelajaran mesin.}
+        Deteksi memakai skoring berbobot dan aturan yang dikalibrasi dari
+        data nyata --- pendekatan yang justru menghasilkan angka
+        false-positive yang dapat dibuktikan. Integrasi model TFLite
+        disiapkan sebagai jalur pengembangan.
+  \item \textbf{Bergantung pada bilah alamat peramban} lewat
+        \texttt{viewId}; peramban yang tidak dikenal dapat lolos.
+  \item \textbf{Ambang belum tervalidasi lapangan} dalam skala besar;
+        angka 0{,}55 dan 0{,}80 dikalibrasi dari contoh.
+\end{itemize}
+
+Arah lanjut: mode latihan interaktif dari data ancaman nyata pengguna
+(kuis ``mana yang asli?''), umpan balik perilaku bulanan, dan validasi
+ambang dari data lapangan.
+
+% =====================================================================
+\section*{Lampiran: Reproduksi Angka}
+\addcontentsline{toc}{section}{Lampiran: Reproduksi Angka}
+% =====================================================================
+Seluruh angka dapat direproduksi dari kode:
+\begin{lstlisting}[language=bash]
+# False positive & cakupan blocklist
+python3 tools/build_blocklist.py --lyra <Lyra> --tranco top-1m.csv.zip
+# -> tools/blocklist_report.md
+
+# Seluruh unit test
+./gradlew testDebugUnitTest
+
+# APK rilis
+./gradlew assembleRelease
+\end{lstlisting}
+
+\end{document}
