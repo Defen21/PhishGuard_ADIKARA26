@@ -143,6 +143,23 @@ object UrlRiskScorer {
             return Verdict(0f, emptyList(), Level.SAFE, hostname, registrable)
         }
 
+        // ── Judi online (judol) — CEK PALING AWAL ───────────────────────
+        // Langsung DANGEROUS: domain mengandung istilah judi ATAU konten
+        // halaman adalah promosi judi — keduanya indikasi kuat situs judol.
+        // Ditaruh sebelum sinyal lain supaya judol TIDAK PERNAH bisa turun
+        // ke SUSPICIOUS karena sinyal lain menambah/mengurangi bobot.
+        if (JudolWordlist.hasStrongSignal(hostname)) {
+            val hit = JudolWordlist.scan(hostname)
+            return Verdict(0.99f, listOf(Signal("Nama domain memuat istilah judi online (${hit.summary})", 0.99f)), Level.DANGEROUS, hostname, registrable)
+        } else if (pageText.isNotBlank() && JudolWordlist.hasStrongSignal(pageText)) {
+            val hit = JudolWordlist.scan(pageText)
+            if (JudolWordlist.isLikelyJudol(hit)) {
+                return Verdict(0.99f, listOf(Signal("Isi halaman berupa promosi judi online (${hit.summary})", 0.99f)), Level.DANGEROUS, hostname, registrable)
+            } else if (hit.score >= 4) {
+                signals += Signal("Isi halaman mengandung istilah judi (${hit.summary})", 0.30f)
+            }
+        }
+
         // ── Sinyal struktural (murah, sangat jarang salah) ──────────────
         if (authority.contains('@')) {
             signals += Signal("Alamat menyembunyikan tujuan asli dengan tanda '@'", 0.40f)
@@ -209,23 +226,6 @@ object UrlRiskScorer {
         }
         if (hostname.length > 45) {
             signals += Signal("Nama domain luar biasa panjang (${hostname.length} karakter)", 0.15f)
-        }
-
-        // ── Judi online ─────────────────────────────────────────────────
-        if (JudolWordlist.hasStrongSignal(hostname)) {
-            // 0,72 dan bukan blokir langsung: kata seperti "slot"/"toto" bisa
-            // muncul di domain sah (toko slot car, merek Toto). Domain judi
-            // sungguhan hampir selalu punya sinyal kedua (TLD murah, angka,
-            // hosting gratis) sehingga tetap tembus ambang — dan yang sudah
-            // dikenal tertangkap lebih dulu oleh DomainBlocklist.
-            signals += Signal("Nama domain memuat istilah judi online", 0.72f)
-        } else if (pageText.isNotBlank()) {
-            val hit = JudolWordlist.scan(pageText)
-            if (JudolWordlist.hasStrongSignal(pageText) && JudolWordlist.isLikelyJudol(hit)) {
-                signals += Signal("Isi halaman berupa promosi judi online (${hit.summary})", 0.60f)
-            } else if (JudolWordlist.hasStrongSignal(pageText) && hit.score >= 4) {
-                signals += Signal("Isi halaman mengandung istilah judi (${hit.summary})", 0.30f)
-            }
         }
 
         val total = signals.fold(0f) { acc, s -> acc + s.weight }.coerceAtMost(0.99f)

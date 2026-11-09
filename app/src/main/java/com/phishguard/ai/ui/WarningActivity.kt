@@ -47,6 +47,15 @@ class WarningActivity : AppCompatActivity() {
     private var tts: TextToSpeechEngine? = null
 
     override fun onDestroy() {
+        // Beri tahu PhishGuardService bahwa overlay sudah benar-benar tertutup.
+        // Service memakai sinyal ini untuk mengeksekusi navigasi Back ke
+        // browser (back-after-block) — deterministik, tidak balapan dengan
+        // animasi penutupan activity.
+        try {
+            sendBroadcast(Intent(PhishGuardService.ACTION_WARNING_CLOSED).apply {
+                setPackage(packageName)
+            })
+        } catch (_: Exception) {}
         tts?.shutdown()
         super.onDestroy()
     }

@@ -107,7 +107,43 @@ class TFLiteMessageProvider : AIModelProvider {
         PhishingRule("dana bansos",          0.85f, "BANSOS_PALSU"),
         PhishingRule("tagihan bpls",         0.85f, "BANSOS_PALSU"),
         PhishingRule("bantuan sosial",       0.70f, "BANSOS_PALSU", weak = true),
-        PhishingRule("subsidi pemerintah",   0.70f, "BANSOS_PALSU", weak = true)
+        PhishingRule("subsidi pemerintah",   0.70f, "BANSOS_PALSU", weak = true),
+
+        // Kategori: INVESTASI BODONG (binary option, robot trading, skema ponzi)
+        PhishingRule("investasi bodong",     0.93f, "INVESTASI_BODONG"),
+        PhishingRule("binary option",        0.90f, "INVESTASI_BODONG"),
+        PhishingRule("robot trading",        0.90f, "INVESTASI_BODONG"),
+        PhishingRule("trading otomatis",     0.88f, "INVESTASI_BODONG"),
+        PhishingRule("profit pasti",         0.90f, "INVESTASI_BODONG"),
+        PhishingRule("keuntungan 100%",      0.90f, "INVESTASI_BODONG"),
+        PhishingRule("uang 5 menit",         0.85f, "INVESTASI_BODONG"),
+        PhishingRule("deposit 10rb",         0.80f, "INVESTASI_BODONG"),
+        PhishingRule("modal kecil profit",   0.82f, "INVESTASI_BODONG"),
+        PhishingRule("join grup investasi",  0.75f, "INVESTASI_BODONG", weak = true),
+        PhishingRule("saham kripto",         0.60f, "INVESTASI_BODONG", weak = true),
+        PhishingRule("konsultan trading",    0.70f, "INVESTASI_BODONG", weak = true),
+
+        // Kategori: PINJOL ILEGAL (penawaran pinjaman tanpa izin OJK)
+        PhishingRule("pinjol tanpa ojk",     0.92f, "PINJOL_ILEGAL"),
+        PhishingRule("pinjaman tanpa agunan", 0.70f, "PINJOL_ILEGAL"),
+        PhishingRule("pinjaman langsung cair", 0.85f, "PINJOL_ILEGAL"),
+        PhishingRule("dana cair tanpa survey", 0.85f, "PINJOL_ILEGAL"),
+        PhishingRule("pinjaman tanpa verifikasi", 0.82f, "PINJOL_ILEGAL"),
+        PhishingRule("dana darurat cepat",   0.70f, "PINJOL_ILEGAL", weak = true),
+        PhishingRule("pinjaman kilat",       0.75f, "PINJOL_ILEGAL"),
+        PhishingRule("utang ditanggung",     0.80f, "PINJOL_ILEGAL"),
+        PhishingRule("pinjaman ojk",         0.50f, "PINJOL_ILEGAL", weak = true),
+
+        // Kategori: LOWONGAN PALSU (phishing lowongan kerja)
+        PhishingRule("lowongan tanpa syarat", 0.80f, "LOWONGAN_PALSU"),
+        PhishingRule("kerja online gaji",    0.75f, "LOWONGAN_PALSU"),
+        PhishingRule("gaji 5 juta",          0.65f, "LOWONGAN_PALSU", weak = true),
+        PhishingRule("kerja sampingan",      0.70f, "LOWONGAN_PALSU"),
+        PhishingRule("task online",          0.70f, "LOWONGAN_PALSU"),
+        PhishingRule("like video dibayar",   0.85f, "LOWONGAN_PALSU"),
+        PhishingRule("menyukai video",       0.65f, "LOWONGAN_PALSU", weak = true),
+        PhishingRule("daftar member gratis", 0.70f, "LOWONGAN_PALSU", weak = true),
+        PhishingRule("biaya pendaftaran",    0.85f, "LOWONGAN_PALSU")
     )
 
     // ── URL extraction dari pesan (termasuk URL tanpa protokol) ──────────
@@ -252,6 +288,9 @@ class TFLiteMessageProvider : AIModelProvider {
             "LINK_MENCURIGAKAN" -> "⚠️ Link mencurigakan terdeteksi: $urlInfo"
             "INFO_SENSITIF"  -> "🚨 Meminta informasi sensitif (OTP/PIN/Password).$urlInfo"
             "BANSOS_PALSU"   -> "⚠️ Penipuan berkedok bantuan sosial ('$pattern').$urlInfo"
+            "INVESTASI_BODONG" -> "🚨 Iming-iming investasi bodong/robot trading ('$pattern').$urlInfo"
+            "PINJOL_ILEGAL"  -> "🚨 Tawaran pinjol ilegal (tanpa izin OJK) ('$pattern').$urlInfo"
+            "LOWONGAN_PALSU" -> "⚠️ Lowongan kerja palsu / task online berbayar ('$pattern').$urlInfo"
             "URL_PHISHING"   -> "🚨 URL phishing terdeteksi: $urlInfo"
             else -> "⚠️ Pesan terindikasi penipuan. Pola: '$pattern'.$urlInfo"
         }

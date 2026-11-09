@@ -16,5 +16,4 @@ local.properties
 
 # PhishGuard Cleanups
 *.log
-*.txt
-google-services.json
+*.tflite

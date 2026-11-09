@@ -1,17 +1,25 @@
 package com.phishguard.ai.ui
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Environment
 import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import com.phishguard.ai.R
 import com.phishguard.ai.data.AppPreferences
 import com.google.android.material.switchmaterial.SwitchMaterial
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class SettingsFragment : Fragment() {
 
@@ -67,6 +75,59 @@ class SettingsFragment : Fragment() {
         switchTts.setOnCheckedChangeListener { _, checked ->
             prefs.ttsEnabled = checked
         }
+
+        // Export Activity Log ke CSV (bukti laporan, mis. untuk kepolisian)
+        val btnExport = view.findViewById<LinearLayout>(R.id.btnExportLog)
+        btnExport.setOnClickListener { exportActivityLog() }
+    }
+
+    /**
+     * Tulis log aktivitas (SharedPreferences "activity_log") ke CSV di
+     * Download/, lalu buka share sheet agar file mudah dikirim.
+     * Format per baris: timestamp ISO|message|source|type (CSV-escaped).
+     */
+    private fun exportActivityLog() {
+        val logs = requireContext().getSharedPreferences("activity_log", Context.MODE_PRIVATE)
+            .getStringSet("logs", emptySet()) ?: emptySet()
+
+        if (logs.isEmpty()) {
+            Toast.makeText(requireContext(), R.string.export_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // CSV header + baris terurut (terbaru dulu)
+        val sb = StringBuilder("timestamp,message,source,type\n")
+        logs.sortedByDescending { it.substringBefore('|').toLongOrNull() ?: 0L }
+            .forEach { entry ->
+                val parts = entry.split("|", limit = 4)
+                if (parts.size == 4) {
+                    sb.append(csv(parts[0])).append(',')
+                        .append(csv(parts[1])).append(',')
+                        .append(csv(parts[2])).append(',')
+                        .append(csv(parts[3])).append('\n')
+                }
+            }
+
+        val fileName = "phishguard_log_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.csv"
+        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val file = File(dir, fileName)
+        file.writeText(sb.toString())
+
+        // Share sheet: kirim file ke WhatsApp/Drive/email tanpa izin storage
+        val uri = FileProvider.getUriForFile(requireContext(), "${requireContext().packageName}.fileprovider", file)
+        val share = Intent(Intent.ACTION_SEND).apply {
+            type = "text/csv"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(share, getString(R.string.setting_export)))
+        Toast.makeText(requireContext(), getString(R.string.export_success, fileName), Toast.LENGTH_LONG).show()
+    }
+
+    /** Escape nilai CSV: bungkus kutip jika mengandung koma/kutip/baris baru. */
+    private fun csv(value: String): String {
+        val v = value.replace("\"", "\"\"")
+        return if (v.any { it == ',' || it == '"' || it == '\n' }) "\"$v\"" else v
     }
 
     override fun onResume() {

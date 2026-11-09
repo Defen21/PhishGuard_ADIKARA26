@@ -32,12 +32,21 @@ class SmsReceiver : BroadcastReceiver() {
 
     private val TAG = "SmsReceiver"
 
+    // Pipeline dibuat SEKALI, bukan per-SMS. AnalysisPipeline menginisialisasi
+    // Room DB + 3 AI provider — membuatnya ulang tiap SMS masuk = buka DB &
+    // init ulang provider berulang (boros, lambat, risiko leak thread).
+    // Instance BroadcastReceiver dipakai ulang oleh sistem, jadi field ini aman.
+    private var pipeline: AnalysisPipeline? = null
+
     override fun onReceive(context: Context?, intent: Intent?) {
         if (context == null || intent == null) return
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
-        val pipeline = AnalysisPipeline(context)
+
+        // Inisialisasi sekali; null-safe karena onReceive bisa dipanggil
+        // sebelum onReceive pertama selesai (multithread jarang, tapi aman).
+        val pipe = pipeline ?: AnalysisPipeline(context).also { pipeline = it }
 
         for (sms in messages) {
             val sender = sms.displayOriginatingAddress ?: "Unknown"
@@ -47,7 +56,7 @@ class SmsReceiver : BroadcastReceiver() {
             sendLogToUI(context, "📩 SMS masuk dari $sender", "SMS", "SYSTEM")
 
             // ── 3-Layer Pipeline untuk SMS ──────────────────────────────
-            pipeline.analyzeMessageLayers(
+            pipe.analyzeMessageLayers(
                 message = body,
                 sender = sender,
                 source = "SMS ($sender)"

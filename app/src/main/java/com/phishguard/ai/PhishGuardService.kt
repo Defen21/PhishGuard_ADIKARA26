@@ -53,12 +53,28 @@ class PhishGuardService : AccessibilityService() {
     // HITL: URL yang ditandai PHISHING oleh pengguna → persisten via SharedPreferences
     private val hitlBlacklistUrls = mutableSetOf<String>()
 
+    // Back-after-block yang deterministik: flag + broadcast onDestroy dari
+    // WarningActivity (bukan Handler timer 600ms yang balapan dengan animasi
+    // penutupan activity dan sering menutup warning itu sendiri).
+    private var backPendingAfterWarning = false
+
     // BroadcastReceiver untuk keputusan HITL dari WarningActivity
     private val hitlReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == ACTION_BLOCK_NUMBER) {
                 val number = intent.getStringExtra("phone_number").orEmpty()
                 if (number.isNotBlank()) blockPhoneNumber(number)
+                return
+            }
+
+            // ACTION_WARNING_CLOSED TIDAK membawa target_url — tangani dulu.
+                        if (intent?.action == ACTION_WARNING_CLOSED) {
+                if (backPendingAfterWarning) {
+                    backPendingAfterWarning = false
+                    // WarningActivity selesai (finish) setelah user menekan
+                    // blokir → sekarang aman kirim Back ke browser.
+                    scheduleBackAfterBlock()
+                }
                 return
             }
 
@@ -81,10 +97,9 @@ class PhishGuardService : AccessibilityService() {
                     hitlBlacklistUrls.add(normalized)
                     saveUrlSet(PREF_BLACKLIST, hitlBlacklistUrls)
                     saveToRoomBlacklist(normalized)
-                    // Setelah blokir, navigasi KEMBALI (Back) dari service dengan
-                    // delay agar aktivitas warning sempat tertutup (finish) dulu,
-                    // lalu back diterapkan ke browser (halaman sebelumnya).
-                    scheduleBackAfterBlock()
+                    // Back dieksekusi saat WarningActivity selesai ditutup
+                    // (lihat ACTION_WARNING_CLOSED) — bukan timer.
+                    backPendingAfterWarning = true
                 }
             }
         }
@@ -113,6 +128,7 @@ class PhishGuardService : AccessibilityService() {
                 addAction(ACTION_MARK_SAFE)
                 addAction(ACTION_MARK_THREAT)
                 addAction(ACTION_BLOCK_NUMBER)
+                addAction(ACTION_WARNING_CLOSED)
             }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(hitlReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -430,8 +446,10 @@ class PhishGuardService : AccessibilityService() {
     private fun unwrapRedirectUrl(url: String): String {
         val s = url.lowercase()
 
-        // Parameter redirect: ?url=, &redirect=, ?target=, ?next=, ?u=
-        Regex("""[?&](?:url|redirect|redirect_url|target|next|dest|u)=([^&]+)""")
+        // Parameter redirect: ?url=, &redirect=, ?target=, ?next=, ?u=, ?q=
+        // (google.com/url?q=<target> adalah pembungkus redirect Google Search;
+        //  tanpa q=, target phishing tersembunyi di balik google.com yang benign)
+        Regex("""[?&](?:url|redirect|redirect_url|target|next|dest|u|q)=([^&]+)""")
             .find(s)?.groupValues?.get(1)?.let { encoded ->
                 val decoded = try {
                     java.net.URLDecoder.decode(encoded, "UTF-8")
@@ -864,6 +882,7 @@ class PhishGuardService : AccessibilityService() {
         const val ACTION_MARK_SAFE    = "com.phishguard.ai.MARK_SAFE"
         const val ACTION_MARK_THREAT  = "com.phishguard.ai.MARK_THREAT"
         const val ACTION_BLOCK_NUMBER = "com.phishguard.ai.BLOCK_NUMBER"
+        const val ACTION_WARNING_CLOSED = "com.phishguard.ai.WARNING_CLOSED"
 
         private const val PREF_BLACKLIST = "urls"
         private const val PREF_WHITELIST = "safe_urls"
