@@ -35,6 +35,10 @@ class PhishGuardService : AccessibilityService() {
     private var lastDetectedMessage: String = ""
     private var warningShownForUrl: String = ""
 
+    // Mute-window setelah blokir+back: cegah loop scan bila browser reload
+    // halaman phising yang sama (fenomena "sudah klik blokir tetapi tidak ke back").
+    private var backMuteUntil = 0L
+
     // HITL: URL yang ditandai AMAN oleh pengguna (sesi ini)
     private val hitlWhitelistUrls = mutableSetOf<String>()
 
@@ -44,6 +48,18 @@ class PhishGuardService : AccessibilityService() {
     // BroadcastReceiver untuk keputusan HITL dari WarningActivity
     private val hitlReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            // Aksi "GO_BACK": setelah user blokir, kembali satu halaman (Back)
+            // dari browser — bukan lompat ke Home screen.
+            if (intent?.action == "com.phishguard.ai.GO_BACK") {
+                Log.d(TAG, "GO_BACK: navigasi kembali satu halaman.")
+                try {
+                    performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                } catch (e: Exception) {
+                    Log.e(TAG, "GO_BACK performGlobalAction error", e)
+                }
+                return
+            }
+
             val targetUrl = intent?.getStringExtra("target_url") ?: return
             val normalized = normalizeUrl(targetUrl)
 
@@ -62,6 +78,10 @@ class PhishGuardService : AccessibilityService() {
                     hitlBlacklistUrls.add(normalized)
                     saveToPersistentBlacklist(normalized)
                     saveToRoomBlacklist(normalized)
+                    // Setelah blokir, navigasi KEMBALI (Back) dari service dengan
+                    // delay agar aktivitas warning sempat tertutup (finish) dulu,
+                    // lalu back diterapkan ke browser (halaman sebelumnya).
+                    scheduleBackAfterBlock()
                 }
             }
         }
@@ -85,6 +105,7 @@ class PhishGuardService : AccessibilityService() {
             val filter = IntentFilter().apply {
                 addAction("com.phishguard.ai.MARK_SAFE")
                 addAction("com.phishguard.ai.MARK_THREAT")
+                addAction("com.phishguard.ai.GO_BACK")
             }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(hitlReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -186,6 +207,13 @@ class PhishGuardService : AccessibilityService() {
             if (isBrowser) {
                 Log.v(TAG, "Browser event: pkg=$packageName type=${event.eventType}")
 
+                // Loop-suppression: sesaat setelah blokir+back jangan re-scan
+                // URL browser (mencegah warning muncul lagi saat halaman reload).
+                if (System.currentTimeMillis() < backMuteUntil) {
+                    Log.v(TAG, "Back-mute aktif, lewati scan browser.")
+                    return
+                }
+
                 var rawUrl = ""
 
                 // === STRATEGI 1: findAccessibilityNodeInfosByViewId (Paling Akurat) ===
@@ -273,9 +301,17 @@ class PhishGuardService : AccessibilityService() {
                 val prefs = getSharedPreferences("activity_log", Context.MODE_PRIVATE)
                 val scannedCount = prefs.getInt("scanned_count", 0)
                 prefs.edit().putInt("scanned_count", scannedCount + 1).apply()
-                
-                pipeline?.analyzeUrl(rawUrl, sourceName) { result ->
-                    handleAnalysisResult(result, rawUrl, sourceName)
+
+                // Ambil sebagian teks halaman yang sedang diakses (accessibility root)
+                // sebagai sinyal konten untuk layer wordlist/AI (deteksi judol dll).
+                val pageSnippet = collectVisiblePageText()
+
+                // Kirim URL yang sudah di-unwrap (host asli, bukan google.com/amp/s/...).
+                // Tanpa ini AI menganalisis host pembungkus yang benign → semua deteksi
+                // (brand, judol wordlist, hyphen) dilewati dan situs lolos.
+                val targetUrl = analyzedUrl
+                pipeline?.analyzeUrl(targetUrl, sourceName, pageSnippet) { result ->
+                    handleAnalysisResult(result, targetUrl, sourceName)
                 }
 
             } else {
@@ -371,6 +407,56 @@ class PhishGuardService : AccessibilityService() {
             if (cleaned.isNotBlank() && cleaned.contains('.')) return cleaned
         }
         return url
+    }
+
+    /**
+     * Kumpulkan sebagian teks dari halaman aktif (accessibility root) sebagai
+     * sinyal konten untuk lapisan wordlist/AI. Dibatasi kapasitas agar tidak
+     * memakan memori & tidak mem-bocorkan seluruh isi halaman.
+     */
+    private fun collectVisiblePageText(maxChars: Int = 1500): String {
+        return try {
+            val root = rootInActiveWindow ?: return ""
+            val sb = StringBuilder()
+            collectNodeText(root, sb, maxChars)
+            root.recycle()
+            sb.toString().trim().take(maxChars)
+        } catch (e: Exception) {
+            Log.e(TAG, "collectVisiblePageText error", e)
+            ""
+        }
+    }
+
+    private fun collectNodeText(node: AccessibilityNodeInfo?, sb: StringBuilder, cap: Int) {
+        if (node == null || sb.length >= cap) return
+        val text = node.text?.toString()?.trim()
+        if (!text.isNullOrBlank()) {
+            sb.append(' ').append(text)
+            if (sb.length > cap) return
+        }
+        for (i in 0 until node.childCount) {
+            if (sb.length >= cap) break
+            val child = node.getChild(i)
+            collectNodeText(child, sb, cap)
+            child?.recycle()
+        }
+    }
+
+    /**
+     * Setelah konfirmasi "Ya, Blokir": tunggu warning Activity selesai (finish),
+     * lalu kirim Back global (GLOBAL_ACTION_BACK) supaya browser kembali satu
+     * halaman. Set mute-window agar page yang reload tak langsung warning lagi.
+     */
+    private fun scheduleBackAfterBlock() {
+        Handler(Looper.getMainLooper()).postDelayed({
+            try {
+                val ok = performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                backMuteUntil = System.currentTimeMillis() + 3500
+                Log.d(TAG, "Back-after-block executed=$ok (muted until +3.5s)")
+            } catch (e: Exception) {
+                Log.e(TAG, "back-after-block error", e)
+            }
+        }, 600)
     }
 
     private fun handleAnalysisResult(result: AnalysisResult, item: String, source: String) {

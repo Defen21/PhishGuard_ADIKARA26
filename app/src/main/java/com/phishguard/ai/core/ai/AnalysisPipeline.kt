@@ -64,7 +64,12 @@ class AnalysisPipeline(private val context: Context) {
      * 2. Cek official URL DB (whitelist)
      * 3. Run AI provider
      */
-    fun analyzeUrl(url: String, source: String, callback: (AnalysisResult) -> Unit) {
+    fun analyzeUrl(
+        url: String,
+        source: String,
+        pageText: String = "",
+        callback: (AnalysisResult) -> Unit
+    ) {
         thread {
             try {
                 Log.d(TAG, "Analyzing URL: $url from $source")
@@ -108,7 +113,8 @@ class AnalysisPipeline(private val context: Context) {
                 val input = AnalysisInput(
                     type = InputType.URL,
                     content = url,
-                    source = source
+                    source = source,
+                    metadata = if (pageText.isBlank()) emptyMap() else mapOf("pageText" to pageText)
                 )
                 val result = urlProvider.analyze(input)
                 callback(result)

@@ -178,13 +178,40 @@ class LstmUrlProvider : AIModelProvider {
             }
         }
 
-        // STEP 3.5: JUDOL / GAMBLING-SCAM KEYWORD (Indonesia spam/gambling)
+        // STEP 3.5: JUDOL / GAMBLING-SCAM — wordlist atas URL + konten halaman.
+        // "AI" di sini = agregasi sinyal: bobot per term, skor URL + skor konten
+        // halaman yang diakses, lalu ambang yang dikalibrasi agar FP rendah.
         if (!isBenign) {
-            val jkw = judolKeywords.firstOrNull { url.contains(it) }
-            if (jkw != null) {
+            val pageText = input.metadata["pageText"].orEmpty()
+            val urlHit = JudolWordlist.scan(url)                       // full URL (host+path+query)
+            val pageHit = if (pageText.isNotBlank()) JudolWordlist.scan(pageText) else JudolWordlist.Hit(emptyList(), 0, "")
+
+            // Domain URL mengandung sinyal judi kuat (slot/judi/togel/gacor/sbobet/…)
+            // ATAU isLikelyJudol (≥2 term) → BLOCK. Satu term kuat saja cukup,
+            // karena kata semacam itu nyaris tak mungkin jadi domain normal.
+            if (JudolWordlist.hasStrongSignal(url) || JudolWordlist.isLikelyJudol(urlHit)) {
                 return AnalysisResult.threat(
-                    confidence = 0.8f,
-                    reason = "Domain berisi istilah judi online '$jkw' (indikasi spam/gambling).",
+                    confidence = 0.85f,
+                    reason = "Domain/path mengandung istilah judi online (${urlHit.summary.ifBlank { "terdeteksi sinyal judi" }}).",
+                    category = ThreatCategory.PHISHING
+                )
+            }
+            // Konten halaman hanya dinaikkan bila ada sinyal judi kuat (FP-reduction:
+            // "bonus gratis" seorang diri TIDAK boleh memblok situs biasa).
+            if (pageText.isNotBlank() && JudolWordlist.hasStrongSignal(pageText) && JudolWordlist.isLikelyJudol(pageHit)) {
+                return AnalysisResult.threat(
+                    confidence = 0.9f,
+                    reason = "Konten halaman berindikasikan judi online: ${pageHit.summary}",
+                    category = ThreatCategory.PHISHING
+                )
+            }
+            // borderline: skor konten menengah IPA guard — juga perlu sinyal kuat
+            if (pageText.isNotBlank() && JudolWordlist.hasStrongSignal(pageText) &&
+                pageHit.score >= 4 && pageHit.matches.size >= 2
+            ) {
+                return AnalysisResult.threat(
+                    confidence = 0.7f,
+                    reason = "Konten halaman mencurigakan (judi/promosi agresif): ${pageHit.summary}",
                     category = ThreatCategory.PHISHING
                 )
             }

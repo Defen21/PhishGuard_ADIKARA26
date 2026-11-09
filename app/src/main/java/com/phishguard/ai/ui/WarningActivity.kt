@@ -3,6 +3,8 @@ package com.phishguard.ai.ui
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.widget.TextView
@@ -185,9 +187,10 @@ class WarningActivity : AppCompatActivity() {
                 btnClose.isEnabled  = false
                 btnSafe.isEnabled   = false
 
-                // 1. Broadcast ke PhishGuardService (simpan ke local Room DB)
+                // 1. Broadcast ke PhishGuardService (simpan ke local Room DB + Back/block)
                 val blacklistIntent = Intent("com.phishguard.ai.MARK_THREAT").apply {
                     putExtra("target_url", url)
+                    setPackage("com.phishguard.ai")   // pastikan sampai ke receiver service
                 }
                 sendBroadcast(blacklistIntent)
 
@@ -215,8 +218,13 @@ class WarningActivity : AppCompatActivity() {
                 //    → versi server akan di-bump → semua user lain akan sync URL ini
                 uploadToFirebase(url, reason)
 
-                // 4. Redirect ke Home (tutup browser phishing)
-                goHomeAndFinish()
+                // ── Helper: tutup warning saja. Navigasi Back ditangani oleh service
+                // (PhishGuardService.scheduleBackAfterBlock pada MARK_THREAT),
+                // agar tidak dobel-nav dan timing-nya terpusat di service.
+                fun goBackAfterBlock() { finish() }
+
+                // 4. Tutup warning; service akan menavigasi kembali satu halaman
+                goBackAfterBlock()
             }
         }
     }
