@@ -42,7 +42,7 @@
         <service
             android:name=".PhishGuardService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true">
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
@@ -66,6 +66,15 @@
             android:name=".service.CallMonitorService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- Warning Overlay Activity -->
+        <activity
+            android:name=".ui.WarningActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Warning"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance" />
 
     </application>
 

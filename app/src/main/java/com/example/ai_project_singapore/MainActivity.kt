@@ -1,8 +1,10 @@
 package com.example.ai_project_singapore
 
 import android.os.Bundle
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
+import com.example.ai_project_singapore.core.security.AppIntegrityChecker
 import com.example.ai_project_singapore.ui.ActivityFragment
 import com.example.ai_project_singapore.ui.DashboardFragment
 import com.example.ai_project_singapore.ui.ProtectionFragment
@@ -20,6 +22,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // === APP INTEGRITY CHECK ===
+        val checker = AppIntegrityChecker(this)
+        val result = checker.performFullCheck()
+        if (!result.isSecure()) {
+            showTamperAlert(result)
+            return
+        }
+
         setContentView(R.layout.activity_main)
 
         // Add all fragments, hide all except dashboard
@@ -49,5 +60,19 @@ class MainActivity : AppCompatActivity() {
             }
             true
         }
+    }
+
+    /**
+     * Show alert dialog when app integrity check fails.
+     * App cannot proceed — user must reinstall.
+     */
+    private fun showTamperAlert(result: AppIntegrityChecker.IntegrityResult) {
+        setContentView(R.layout.activity_main) // Need a basic layout for dialog
+        AlertDialog.Builder(this)
+            .setTitle(R.string.integrity_failed_title)
+            .setMessage(R.string.integrity_failed_message)
+            .setCancelable(false)
+            .setPositiveButton("OK") { _, _ -> finish() }
+            .show()
     }
 }
