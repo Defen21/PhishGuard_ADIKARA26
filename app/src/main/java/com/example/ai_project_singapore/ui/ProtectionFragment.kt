@@ -4,8 +4,13 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.TextView
+import androidx.cardview.widget.CardView
 import androidx.fragment.app.Fragment
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.example.ai_project_singapore.R
+import com.example.ai_project_singapore.core.InstalledAppDetector
 import com.example.ai_project_singapore.data.AppPreferences
 import com.google.android.material.switchmaterial.SwitchMaterial
 
@@ -21,7 +26,14 @@ class ProtectionFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         prefs = AppPreferences(requireContext())
 
-        // App monitoring switches
+        setupDefaultSwitches(view)
+        setupDetectedApps(view)
+    }
+
+    /**
+     * Setup default hardcoded app monitoring switches.
+     */
+    private fun setupDefaultSwitches(view: View) {
         val switchWhatsapp = view.findViewById<SwitchMaterial>(R.id.switchWhatsapp)
         val switchTelegram = view.findViewById<SwitchMaterial>(R.id.switchTelegram)
         val switchFacebook = view.findViewById<SwitchMaterial>(R.id.switchFacebook)
@@ -44,5 +56,37 @@ class ProtectionFragment : Fragment() {
         switchInstagram.setOnCheckedChangeListener { _, checked -> prefs.monitorInstagram = checked }
         switchChrome.setOnCheckedChangeListener { _, checked -> prefs.monitorChrome = checked }
         switchCallProtection.setOnCheckedChangeListener { _, checked -> prefs.callProtectionEnabled = checked }
+    }
+
+    /**
+     * Auto-detect installed messaging/social/browser apps
+     * and display them in a dynamic RecyclerView section.
+     */
+    private fun setupDetectedApps(view: View) {
+        val tvHeader = view.findViewById<TextView>(R.id.tvDetectedHeader)
+        val tvDesc = view.findViewById<TextView>(R.id.tvDetectedDesc)
+        val cardDetected = view.findViewById<CardView>(R.id.cardDetectedApps)
+        val rvDetected = view.findViewById<RecyclerView>(R.id.rvDetectedApps)
+
+        // Detect installed apps
+        val detector = InstalledAppDetector(requireContext())
+        val detectedApps = detector.detectApps()
+
+        if (detectedApps.isNotEmpty()) {
+            // Show section
+            tvHeader.visibility = View.VISIBLE
+            tvDesc.visibility = View.VISIBLE
+            cardDetected.visibility = View.VISIBLE
+
+            // Get currently enabled custom apps
+            val enabledApps = prefs.getCustomMonitoredApps()
+
+            // Setup RecyclerView
+            rvDetected.layoutManager = LinearLayoutManager(requireContext())
+            rvDetected.adapter = DetectedAppAdapter(detectedApps, enabledApps) { packageName, enabled ->
+                prefs.setCustomMonitoredApp(packageName, enabled)
+                // PhishGuardService will auto-update via preference listener
+            }
+        }
     }
 }

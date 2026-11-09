@@ -1,45 +1,76 @@
 package com.example.ai_project_singapore
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
+import android.content.SharedPreferences
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
-import com.example.ai_project_singapore.core.ai.PhishingDetector
-import com.example.ai_project_singapore.core.ai.MessageAnalyzer
+import com.example.ai_project_singapore.core.ai.AnalysisPipeline
+import com.example.ai_project_singapore.core.ai.AnalysisResult
 import com.example.ai_project_singapore.data.AppPreferences
+import com.example.ai_project_singapore.ui.WarningActivity
 
 class PhishGuardService : AccessibilityService() {
 
     private val TAG = "PhishGuardService"
-    private var phishingDetector: PhishingDetector? = null
-    private var messageAnalyzer: MessageAnalyzer? = null
+    private var pipeline: AnalysisPipeline? = null
     private var prefs: AppPreferences? = null
     private var isReady = false
 
     // Track last URL to avoid duplicate scans
     private var lastDetectedUrl: String = ""
 
+    // Track if warning is currently shown for this URL
+    private var warningShownForUrl: String = ""
+
+    // Preference change listener for dynamic packageNames update
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        updateMonitoredPackages()
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         try {
-            phishingDetector = PhishingDetector(this)
-            messageAnalyzer = MessageAnalyzer(this)
+            pipeline = AnalysisPipeline(this)
             prefs = AppPreferences(this)
             isReady = true
+
+            // Set dynamic packageNames
+            updateMonitoredPackages()
+
+            // Listen for preference changes (user toggles in ProtectionFragment)
+            prefs?.registerListener(prefListener)
+
             sendLogToUI("PhishGuard Service started.", "System", "SYSTEM")
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing service", e)
         }
     }
 
+    /**
+     * Dynamically update monitored packages via setServiceInfo().
+     * Called on service start and whenever user toggles monitoring in ProtectionFragment.
+     */
+    private fun updateMonitoredPackages() {
+        try {
+            val info = serviceInfo ?: return
+            val packages = prefs?.getMonitoredPackages() ?: return
+            info.packageNames = packages.toTypedArray()
+            serviceInfo = info
+            Log.d(TAG, "Updated monitored packages: ${packages.joinToString()}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating monitored packages", e)
+        }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Safety: don't process anything until service is fully ready
         if (!isReady || event == null) return
 
         try {
             val packageName = event.packageName?.toString() ?: return
 
-            // Check if this package is in the monitored list
+            // Double-check package is in monitored list
             val monitoredPackages = prefs?.getMonitoredPackages() ?: return
             if (!monitoredPackages.contains(packageName)) return
 
@@ -56,13 +87,12 @@ class PhishGuardService : AccessibilityService() {
                             lastDetectedUrl = extractedUrl
                             Log.d(TAG, "URL Detected: $extractedUrl")
 
-                            phishingDetector?.analyzeUrl(extractedUrl, sourceName) { isPhishing, confidence, reason ->
-                                if (isPhishing) {
-                                    sendLogToUI("⚠️ PHISHING: $extractedUrl — $reason", sourceName, "PHISHING")
-                                } else {
-                                    sendLogToUI("✅ Safe: $extractedUrl", sourceName, "SAFE")
-                                }
+                            pipeline?.analyzeUrl(extractedUrl, sourceName) { result ->
+                                handleAnalysisResult(result, extractedUrl, sourceName)
                             }
+                        } else if (extractedUrl == warningShownForUrl) {
+                            // URL masih sama setelah warning dismiss → re-launch warning
+                            launchWarning(extractedUrl, "URL masih terindikasi phishing", sourceName)
                         }
                     }
                 }
@@ -74,10 +104,8 @@ class PhishGuardService : AccessibilityService() {
                         if (textList != null && textList.isNotEmpty()) {
                             val text = textList.joinToString(" ")
                             if (text.length > 10) {
-                                messageAnalyzer?.analyzeMessage(text, sourceName) { isSuspicious, confidence, reason ->
-                                    if (isSuspicious) {
-                                        sendLogToUI("⚠️ Suspicious in $sourceName — $reason", sourceName, "PHISHING")
-                                    }
+                                pipeline?.analyzeMessage(text, sourceName) { result ->
+                                    handleAnalysisResult(result, text.take(100), sourceName)
                                 }
                             }
                         }
@@ -89,18 +117,51 @@ class PhishGuardService : AccessibilityService() {
         }
     }
 
+    /**
+     * Handle analysis result — send log and launch warning if threat.
+     */
+    private fun handleAnalysisResult(result: AnalysisResult, item: String, source: String) {
+        if (result.isThreat) {
+            sendLogToUI("⚠️ ${result.threatType}: $item — ${result.reason}", source, "PHISHING")
+            launchWarning(item, "Akses Diblokir: ${result.reason}", source)
+        } else {
+            sendLogToUI("✅ Safe: ${item.take(80)}", source, "SAFE")
+            // Clear warning tracking if URL is now safe
+            if (item == warningShownForUrl) {
+                warningShownForUrl = ""
+            }
+        }
+    }
+
+    /**
+     * Launch the red warning overlay Activity.
+     */
+    private fun launchWarning(url: String, reason: String, source: String) {
+        try {
+            warningShownForUrl = url
+            val intent = Intent(this, WarningActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra(WarningActivity.EXTRA_PHISHING_URL, url)
+                putExtra(WarningActivity.EXTRA_REASON, reason)
+                putExtra(WarningActivity.EXTRA_SOURCE, source)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching warning", e)
+        }
+    }
+
     override fun onInterrupt() {
         Log.d(TAG, "Service interrupted")
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        prefs?.unregisterListener(prefListener)
+        pipeline?.release()
         isReady = false
     }
 
-    /**
-     * Sends a log message to the UI via broadcast
-     */
     private fun sendLogToUI(message: String, source: String, type: String) {
         try {
             val intent = Intent("com.example.ai_project_singapore.LOG_UPDATE")
@@ -120,7 +181,15 @@ class PhishGuardService : AccessibilityService() {
             "org.telegram.messenger" -> "Telegram"
             "com.facebook.orca" -> "Messenger"
             "com.instagram.android" -> "Instagram"
-            else -> packageName
+            else -> {
+                try {
+                    val pm = packageManager
+                    val appInfo = pm.getApplicationInfo(packageName, 0)
+                    pm.getApplicationLabel(appInfo).toString()
+                } catch (e: Exception) {
+                    packageName
+                }
+            }
         }
     }
 }

@@ -49,8 +49,31 @@ class AppPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_TTS, false)
         set(value) = prefs.edit().putBoolean(KEY_TTS, value).apply()
 
+    // --- Custom Monitored Apps (from auto-detect) ---
+
     /**
-     * Returns the list of package names that should be monitored by the Accessibility Service.
+     * Set a custom app as monitored or not.
+     */
+    fun setCustomMonitoredApp(packageName: String, enabled: Boolean) {
+        val apps = getCustomMonitoredApps().toMutableSet()
+        if (enabled) {
+            apps.add(packageName)
+        } else {
+            apps.remove(packageName)
+        }
+        prefs.edit().putStringSet(KEY_CUSTOM_APPS, apps).apply()
+    }
+
+    /**
+     * Get all custom monitored app package names.
+     */
+    fun getCustomMonitoredApps(): Set<String> {
+        return prefs.getStringSet(KEY_CUSTOM_APPS, emptySet()) ?: emptySet()
+    }
+
+    /**
+     * Returns the complete list of package names to be monitored.
+     * Includes both hardcoded default apps and user-added custom apps.
      */
     fun getMonitoredPackages(): Set<String> {
         val packages = mutableSetOf<String>()
@@ -59,7 +82,26 @@ class AppPreferences(context: Context) {
         if (monitorTelegram) packages.add("org.telegram.messenger")
         if (monitorFacebook) packages.add("com.facebook.orca")
         if (monitorInstagram) packages.add("com.instagram.android")
+        // Add custom monitored apps from auto-detect
+        packages.addAll(getCustomMonitoredApps())
         return packages
+    }
+
+    // --- Preference Change Listener ---
+
+    /**
+     * Register a listener for preference changes.
+     * Used by PhishGuardService to dynamically update packageNames.
+     */
+    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    /**
+     * Unregister a preference change listener.
+     */
+    fun unregisterListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
     }
 
     companion object {
@@ -71,5 +113,6 @@ class AppPreferences(context: Context) {
         private const val KEY_CALL_PROTECTION = "call_protection"
         private const val KEY_NOTIFICATIONS = "notifications"
         private const val KEY_TTS = "tts"
+        private const val KEY_CUSTOM_APPS = "custom_monitored_apps"
     }
 }
