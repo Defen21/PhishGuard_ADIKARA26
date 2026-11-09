@@ -69,7 +69,9 @@ class LstmUrlProvider : AIModelProvider {
             pageText = input.metadata["pageText"].orEmpty()
         )
 
-        Log.d(TAG, "${verdict.level} ${"%.2f".format(verdict.score)} — ${verdict.hostname} :: ${verdict.reason}")
+        val pageLen = input.metadata["pageText"].orEmpty().length
+        Log.d(TAG, "${verdict.level} ${"%.2f".format(verdict.score)} — ${verdict.hostname} " +
+                "(teks halaman: $pageLen karakter) :: ${verdict.reason}")
 
         val meta = mapOf(
             "level" to verdict.level.name,

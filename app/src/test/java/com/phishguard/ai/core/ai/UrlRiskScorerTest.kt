@@ -145,6 +145,31 @@ class UrlRiskScorerTest {
     }
 
     @Test
+    fun `isi halaman tetap diperiksa walau domain punya satu istilah ambigu`() {
+        // Dulu berada di rantai else-if, jadi domain dengan satu istilah
+        // ambigu tidak pernah diperiksa isinya — padahal justru itu yang
+        // paling butuh konfirmasi dari konten.
+        val judol = "slot gacor maxwin rtp live scatter bonus new member " +
+                "deposit pulsa jackpot terbesar daftar sekarang"
+        assertEquals(
+            UrlRiskScorer.Level.DANGEROUS,
+            verdict("https://totoharian.com", judol).level
+        )
+    }
+
+    @Test
+    fun `situs judol tanpa kata kunci di domain tertangkap lewat isi halaman`() {
+        // Kasus nyata dari log perangkat: coy99win.com, aboutcoy999.com —
+        // nama domainnya bersih, isinya jelas judol.
+        val judol = "Situs slot gacor terpercaya rtp maxwin bonus new member " +
+                "deposit tanpa potongan scatter jackpot daftar sekarang"
+        assertEquals(
+            UrlRiskScorer.Level.DANGEROUS,
+            verdict("https://coy99win.com/home?register", judol).level
+        )
+    }
+
+    @Test
     fun `registrable domain sadar ccTLD dua tingkat`() {
         assertEquals("bca.co.id", UrlRiskScorer.registrableDomain("m.klikbca.bca.co.id"))
         assertEquals("contoh.com", UrlRiskScorer.registrableDomain("a.b.contoh.com"))

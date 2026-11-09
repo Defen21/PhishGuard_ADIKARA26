@@ -45,6 +45,15 @@ class PhishGuardService : AccessibilityService() {
     private var warningShownForUrl: String = ""
 
 
+    // Pemindaian ulang isi halaman. Analisis pertama berjalan pada
+    // milidetik yang sama dengan perubahan bilah alamat, saat halaman belum
+    // dirender sama sekali — terukur hanya 33 karakter teks tertangkap pada
+    // situs judol nyata. Sinyal berbasis konten karena itu tidak pernah
+    // punya bahan. Pemindaian kedua dijadwalkan setelah halaman sempat
+    // tampil.
+    private val rescanHandler = Handler(Looper.getMainLooper())
+    private var pendingRescan: Runnable? = null
+
     // Mute-window setelah blokir+back: cegah loop scan bila browser reload
     // halaman phising yang sama (fenomena "sudah klik blokir tetapi tidak ke back").
     private var backMuteUntil = 0L
@@ -362,7 +371,7 @@ class PhishGuardService : AccessibilityService() {
 
                 // Ambil sebagian teks halaman yang sedang diakses (accessibility root)
                 // sebagai sinyal konten untuk layer wordlist/AI (deteksi judol dll).
-                val pageSnippet = collectVisiblePageText()
+                val pageSnippet = collectVisiblePageText(packageName)
 
                 // Kirim URL yang sudah di-unwrap (host asli, bukan google.com/amp/s/...).
                 // Tanpa ini AI menganalisis host pembungkus yang benign → semua deteksi
@@ -371,6 +380,11 @@ class PhishGuardService : AccessibilityService() {
                 pipeline?.analyzeUrl(targetUrl, sourceName, pageSnippet) { result ->
                     handleAnalysisResult(result, targetUrl, sourceName)
                 }
+
+                // Halaman belum dirender saat ini. Periksa lagi setelah
+                // isinya tampil — di situlah situs judol tanpa kata kunci
+                // di domainnya baru bisa dikenali.
+                scheduleContentRescan(targetUrl, sourceName, packageName)
 
             } else {
                 // ═════════════════════════════════════
@@ -516,9 +530,22 @@ class PhishGuardService : AccessibilityService() {
      * sinyal konten untuk lapisan wordlist/AI. Dibatasi kapasitas agar tidak
      * memakan memori & tidak mem-bocorkan seluruh isi halaman.
      */
-    private fun collectVisiblePageText(maxChars: Int = 1500): String {
+    private fun collectVisiblePageText(expectedPackage: String, maxChars: Int = 1500): String {
         return try {
             val root = rootInActiveWindow ?: return ""
+            // Jendela aktif WAJIB masih milik peramban yang sedang dinilai.
+            //
+            // Tanpa pemeriksaan ini, pemindaian yang tertunda membaca layar
+            // apa pun yang sedang terbuka. Terbukti di perangkat: percakapan
+            // WhatsApp terbaca dan diatribusikan ke sebuah URL judol. Dua
+            // akibatnya sama-sama buruk — vonisnya jadi keliru, dan isi
+            // percakapan pribadi ikut masuk mesin analisis.
+            val actual = root.packageName?.toString()
+            if (actual != expectedPackage) {
+                root.recycle()
+                Log.v(TAG, "Jendela aktif sudah pindah ke $actual, batalkan baca isi halaman")
+                return ""
+            }
             val sb = StringBuilder()
             collectNodeText(root, sb, maxChars)
             root.recycle()
@@ -571,6 +598,39 @@ class PhishGuardService : AccessibilityService() {
      *   SUSPICIOUS       → notifikasi yang bisa diabaikan, browsing jalan terus
      *   selain itu       → hanya masuk log
      */
+    /**
+     * Periksa ulang URL yang sama setelah halamannya sempat dirender.
+     *
+     * Hanya MENAIKKAN vonis: kalau pemindaian kedua menilai aman, hasilnya
+     * diabaikan diam-diam. Vonis pertama sudah dilaporkan, dan menurunkannya
+     * di belakang layar hanya akan membingungkan.
+     */
+    private fun scheduleContentRescan(url: String, source: String, browserPackage: String) {
+        pendingRescan?.let { rescanHandler.removeCallbacks(it) }
+        var attempt = 0
+        lateinit var task: Runnable
+        task = Runnable {
+            attempt++
+            // Pengguna sudah pindah halaman — pemindaian tak relevan lagi.
+            if (normalizeUrl(lastDetectedUrl) != normalizeUrl(url)) return@Runnable
+            if (System.currentTimeMillis() < backMuteUntil) return@Runnable
+
+            val text = collectVisiblePageText(browserPackage)
+            if (text.length < MIN_PAGE_TEXT) {
+                // Halaman masih kosong; coba sekali lagi, jangan lebih.
+                if (attempt < RESCAN_ATTEMPTS) rescanHandler.postDelayed(task, RESCAN_DELAY_MS)
+                return@Runnable
+            }
+
+            Log.d(TAG, "Pindai ulang isi halaman $url (${text.length} karakter)")
+            pipeline?.analyzeUrl(url, source, text) { result ->
+                if (result.isThreat) handleAnalysisResult(result, url, source)
+            }
+        }
+        pendingRescan = task
+        rescanHandler.postDelayed(task, RESCAN_DELAY_MS)
+    }
+
     private fun handleAnalysisResult(result: AnalysisResult, item: String, source: String) {
         if (!result.isThreat) {
             sendLogToUI("✅ Aman: ${item.take(80)}", source, "SAFE")
@@ -895,6 +955,7 @@ class PhishGuardService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        rescanHandler.removeCallbacksAndMessages(null)
         prefs?.unregisterListener(prefListener)
         try { unregisterReceiver(hitlReceiver) } catch (e: Exception) {}
         pipeline?.release()
@@ -938,6 +999,13 @@ class PhishGuardService : AccessibilityService() {
         private const val PREF_BLACKLIST = "urls"
         private const val PREF_WHITELIST = "safe_urls"
         private const val ALERT_CHANNEL_ID = "phishguard_suspicious"
+
+        /** Jeda sebelum isi halaman diperiksa ulang. */
+        private const val RESCAN_DELAY_MS = 2500L
+        /** Berapa kali menunggu halaman terisi sebelum menyerah. */
+        private const val RESCAN_ATTEMPTS = 3
+        /** Di bawah ini teksnya masih antarmuka peramban, bukan isi halaman. */
+        private const val MIN_PAGE_TEXT = 300
     }
 
     private fun getAppName(packageName: String): String {

@@ -162,7 +162,13 @@ object UrlRiskScorer {
             // divonis. Dengan sinyal lain (TLD murah, angka, hosting gratis)
             // ia tetap menembus ambang berbahaya.
             signals += Signal("Nama domain memuat istilah yang lazim pada situs judi", 0.72f)
-        } else if (pageText.isNotBlank() && JudolWordlist.hasStrongSignal(pageText)) {
+        }
+
+        // Isi halaman diperiksa TERPISAH, bukan sebagai cabang else.
+        // Sebelumnya ia berada di rantai else-if, sehingga domain yang memuat
+        // satu istilah ambigu tidak pernah diperiksa isinya sama sekali —
+        // justru kasus yang paling butuh pemeriksaan konten.
+        if (pageText.isNotBlank() && JudolWordlist.hasStrongSignal(pageText)) {
             val hit = JudolWordlist.scan(pageText)
             if (JudolWordlist.isLikelyJudol(hit)) {
                 return Verdict(0.99f, listOf(Signal("Isi halaman berupa promosi judi online (${hit.summary})", 0.99f)), Level.DANGEROUS, hostname, registrable)
