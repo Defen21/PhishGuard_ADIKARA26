@@ -89,8 +89,15 @@ class AppIntegrityChecker(private val context: Context) {
             val currentHash = getSignatureHash(signatures[0])
             Log.d(TAG, "Current signature hash: $currentHash")
 
-            // Bandingkan dengan hash release key yang sebenarnya
-            // TODO: Ganti EXPECTED_SIGNATURE_HASH dengan hash SHA-256 dari release keystore
+            // Hash belum diisi → LOLOSKAN, jangan matikan aplikasi.
+            // Sebelumnya build release selalu gagal cek ini dan pengguna
+            // hanya melihat dialog "aplikasi dimodifikasi" lalu app tertutup.
+            if (EXPECTED_SIGNATURE_HASH == PLACEHOLDER_HASH) {
+                Log.w(TAG, "EXPECTED_SIGNATURE_HASH belum diisi — verifikasi tanda tangan dilewati. " +
+                        "Isi dengan: keytool -list -v -keystore release.keystore | grep SHA256")
+                return true
+            }
+
             currentHash == EXPECTED_SIGNATURE_HASH
         } catch (e: Exception) {
             Log.e(TAG, "Signature verification error", e)
@@ -214,8 +221,11 @@ class AppIntegrityChecker(private val context: Context) {
     }
 
     companion object {
-        // TODO: Replace with your actual release signing certificate SHA-256 hash
+        private const val PLACEHOLDER_HASH = "REPLACE_WITH_YOUR_RELEASE_KEY_HASH"
+
+        // Isi dengan SHA-256 sertifikat penandatangan release sebelum rilis.
         // Generate: keytool -list -v -keystore release.keystore | grep SHA256
-        private const val EXPECTED_SIGNATURE_HASH = "REPLACE_WITH_YOUR_RELEASE_KEY_HASH"
+        // Selama masih placeholder, verifikasi tanda tangan dilewati (lihat verifySignature).
+        private const val EXPECTED_SIGNATURE_HASH = PLACEHOLDER_HASH
     }
 }

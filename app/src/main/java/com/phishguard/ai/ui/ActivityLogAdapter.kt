@@ -43,6 +43,10 @@ class ActivityLogAdapter(
                 holder.ivIcon.setImageResource(R.drawable.ic_protection)
                 holder.ivIcon.setColorFilter(context.getColor(R.color.success))
             }
+            ActivityLogItem.LogType.SUSPICIOUS -> {
+                holder.ivIcon.setImageResource(android.R.drawable.ic_dialog_alert)
+                holder.ivIcon.setColorFilter(context.getColor(R.color.warning))
+            }
             ActivityLogItem.LogType.PHISHING -> {
                 holder.ivIcon.setImageResource(android.R.drawable.ic_dialog_alert)
                 holder.ivIcon.setColorFilter(context.getColor(R.color.error))

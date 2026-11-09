@@ -11,6 +11,8 @@ data class ActivityLogItem(
 ) {
     enum class LogType {
         SAFE,
+        /** Sinyal cukup untuk diberitahukan, belum cukup untuk memblokir. */
+        SUSPICIOUS,
         PHISHING,
         CALL,
         SYSTEM

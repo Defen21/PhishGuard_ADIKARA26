@@ -110,6 +110,7 @@ class SmsReceiver : BroadcastReceiver() {
 
     private fun sendLogToUI(context: Context, message: String, source: String, type: String) {
         val intent = Intent("com.phishguard.ai.LOG_UPDATE").apply {
+            setPackage(context.packageName)
             putExtra("message", message)
             putExtra("source", source)
             putExtra("type", type)

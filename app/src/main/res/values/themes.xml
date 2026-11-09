@@ -14,13 +14,19 @@
         <!-- Customize your theme here. -->
     </style>
 
-    <!-- Warning Screen Theme (Floating / Transparent) -->
-    <style name="Theme.Warning" parent="Theme.MaterialComponents.Light.Dialog.Alert">
+    <!--
+        Tema layar peringatan: transparan SATU LAYAR PENUH, bukan dialog
+        mengambang. Layout-nya sendiri yang menggambar scrim + kartu, jadi
+        kartu bisa menggulung saat teks alasannya panjang — dengan
+        windowIsFloating dialog akan terpotong di layar kecil.
+    -->
+    <style name="Theme.Warning" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowContentOverlay">@null</item>
         <item name="android:windowNoTitle">true</item>
-        <item name="android:windowIsFloating">true</item>
-        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
     </style>
 </resources>

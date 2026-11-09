@@ -33,69 +33,81 @@ class TFLiteMessageProvider : AIModelProvider {
     // ── HYBRID AI ENGINE ──────────────────────────────────────────────────
     // Currently using Enhanced Rule Engine with brand-mismatch detection.
     // TFLite placeholder is ready for drop-in TinyBERT model.
-    private data class PhishingRule(val pattern: String, val score: Float, val category: String)
+    /**
+     * @param weak pola yang juga lazim muncul di pesan SAH ("install aplikasi",
+     *   "undangan pernikahan", "bit.ly"). Pola lemah tidak pernah cukup
+     *   sendirian — harus ada pola kuat lain yang menguatkan. Ini perbaikan
+     *   false-positive utama: dulu "install aplikasi" bernilai 0,95 dan
+     *   langsung memicu peringatan pada pesan yang wajar.
+     */
+    private data class PhishingRule(
+        val pattern: String,
+        val score: Float,
+        val category: String,
+        val weak: Boolean = false
+    )
 
     private val rules = listOf(
-        // Kategori: UNDIAN / HADIAH PALSU (skor tinggi)
+        // Kategori: UNDIAN / HADIAH PALSU
         PhishingRule("pemenang undian",      0.90f, "HADIAH_PALSU"),
         PhishingRule("selamat anda menang",  0.92f, "HADIAH_PALSU"),
         PhishingRule("hadiah dari bca",      0.95f, "HADIAH_PALSU"),
         PhishingRule("hadiah dari bri",      0.95f, "HADIAH_PALSU"),
         PhishingRule("hadiah dari mandiri",  0.95f, "HADIAH_PALSU"),
         PhishingRule("klaim hadiah",         0.88f, "HADIAH_PALSU"),
-        PhishingRule("100 juta",             0.70f, "HADIAH_PALSU"),
-        PhishingRule("uang tunai",           0.55f, "HADIAH_PALSU"),
+        PhishingRule("100 juta",             0.70f, "HADIAH_PALSU", weak = true),
+        PhishingRule("uang tunai",           0.55f, "HADIAH_PALSU", weak = true),
         PhishingRule("gratis dari bca",      0.93f, "HADIAH_PALSU"),
 
-        // Kategori: ANCAMAN BANK (skor tinggi)
+        // Kategori: ANCAMAN BANK
         PhishingRule("pemblokiran rekening", 0.91f, "ANCAMAN_BANK"),
         PhishingRule("rekening anda diblokir", 0.93f, "ANCAMAN_BANK"),
         PhishingRule("rekening dibekukan",   0.90f, "ANCAMAN_BANK"),
         PhishingRule("kartu anda diblokir",  0.90f, "ANCAMAN_BANK"),
         PhishingRule("verifikasi data anda", 0.85f, "ANCAMAN_BANK"),
-        PhishingRule("segera hubungi",       0.60f, "ANCAMAN_BANK"),
+        PhishingRule("segera hubungi",       0.60f, "ANCAMAN_BANK", weak = true),
         PhishingRule("konfirmasi identitas", 0.72f, "ANCAMAN_BANK"),
 
-        // Kategori: APK BERBAHAYA (skor sangat tinggi)
+        // Kategori: APK BERBAHAYA
         PhishingRule("unduh apk",            0.97f, "APK_BERBAHAYA"),
-        PhishingRule("install aplikasi",     0.95f, "APK_BERBAHAYA"),
         PhishingRule("apk kurir",            0.98f, "APK_BERBAHAYA"),
         PhishingRule("apk surat",            0.98f, "APK_BERBAHAYA"),
-        PhishingRule("undangan pernikahan",  0.85f, "APK_BERBAHAYA"),
-        PhishingRule("lihat foto",           0.60f, "APK_BERBAHAYA"),
-        PhishingRule("download file",        0.78f, "APK_BERBAHAYA"),
+        PhishingRule("install aplikasi",     0.70f, "APK_BERBAHAYA", weak = true),
+        PhishingRule("undangan pernikahan",  0.70f, "APK_BERBAHAYA", weak = true),
+        PhishingRule("lihat foto",           0.60f, "APK_BERBAHAYA", weak = true),
+        PhishingRule("download file",        0.70f, "APK_BERBAHAYA", weak = true),
 
         // Kategori: KURIR PALSU
         PhishingRule("paket anda tertahan",  0.91f, "KURIR_PALSU"),
         PhishingRule("paket belum diambil",  0.88f, "KURIR_PALSU"),
-        PhishingRule("biaya pengiriman",     0.65f, "KURIR_PALSU"),
+        PhishingRule("biaya pengiriman",     0.65f, "KURIR_PALSU", weak = true),
         PhishingRule("surat tilang",         0.93f, "KURIR_PALSU"),
-        PhishingRule("j&t express",          0.50f, "KURIR_PALSU"),  // Rendah karena brand sah
+        PhishingRule("j&t express",          0.50f, "KURIR_PALSU", weak = true),
 
         // Kategori: LINK MENCURIGAKAN
-        PhishingRule(".vercel.app",          0.85f, "LINK_MENCURIGAKAN"),
         PhishingRule(".000webhostapp.com",   0.95f, "LINK_MENCURIGAKAN"),
-        PhishingRule(".netlify.app",         0.75f, "LINK_MENCURIGAKAN"),
-        PhishingRule("bit.ly",               0.70f, "LINK_MENCURIGAKAN"),
-        PhishingRule("tinyurl.com",          0.70f, "LINK_MENCURIGAKAN"),
-        PhishingRule("coba kunjungi",        0.72f, "LINK_MENCURIGAKAN"),
-        PhishingRule("klik link",            0.78f, "LINK_MENCURIGAKAN"),
+        PhishingRule(".vercel.app",          0.80f, "LINK_MENCURIGAKAN"),
+        PhishingRule(".netlify.app",         0.75f, "LINK_MENCURIGAKAN", weak = true),
+        PhishingRule("bit.ly",               0.60f, "LINK_MENCURIGAKAN", weak = true),
+        PhishingRule("tinyurl.com",          0.60f, "LINK_MENCURIGAKAN", weak = true),
+        PhishingRule("coba kunjungi",        0.65f, "LINK_MENCURIGAKAN", weak = true),
+        PhishingRule("klik link",            0.70f, "LINK_MENCURIGAKAN", weak = true),
         PhishingRule("kunjungi segera",      0.80f, "LINK_MENCURIGAKAN"),
 
         // Kategori: PERMINTAAN INFO SENSITIF
         PhishingRule("kode otp anda",        0.95f, "INFO_SENSITIF"),
         PhishingRule("ketik pin anda",       0.95f, "INFO_SENSITIF"),
         PhishingRule("masukkan pin",         0.88f, "INFO_SENSITIF"),
-        PhishingRule("nomor rekening",       0.50f, "INFO_SENSITIF"),
         PhishingRule("password anda",        0.80f, "INFO_SENSITIF"),
         PhishingRule("cvv kartu",            0.92f, "INFO_SENSITIF"),
+        PhishingRule("nomor rekening",       0.50f, "INFO_SENSITIF", weak = true),
 
         // Kategori: BANTUAN SOSIAL PALSU
-        PhishingRule("bantuan sosial",       0.82f, "BANSOS_PALSU"),
         PhishingRule("blt pemerintah",       0.88f, "BANSOS_PALSU"),
         PhishingRule("dana bansos",          0.85f, "BANSOS_PALSU"),
-        PhishingRule("subsidi pemerintah",   0.80f, "BANSOS_PALSU"),
-        PhishingRule("tagihan bpls",         0.85f, "BANSOS_PALSU")
+        PhishingRule("tagihan bpls",         0.85f, "BANSOS_PALSU"),
+        PhishingRule("bantuan sosial",       0.70f, "BANSOS_PALSU", weak = true),
+        PhishingRule("subsidi pemerintah",   0.70f, "BANSOS_PALSU", weak = true)
     )
 
     // ── URL extraction dari pesan (termasuk URL tanpa protokol) ──────────
@@ -151,49 +163,52 @@ class TFLiteMessageProvider : AIModelProvider {
      * Lebih akurat dari simple contains() karena menghitung skor kumulatif.
      */
     private fun runEnhancedRuleEngine(message: String): AnalysisResult {
-        var maxScore = 0.0f
-        var matchedCategory = ""
-        var matchedPattern = ""
+        val matched = rules.filter { message.contains(it.pattern) }
+        matched.forEach { Log.d(TAG, "Rule match: '${it.pattern}' (${it.score}, ${it.category}, weak=${it.weak})") }
 
-        // 1. Scoring kata kunci
-        for (rule in rules) {
-            if (message.contains(rule.pattern)) {
-                Log.d(TAG, "Rule match: '${rule.pattern}' (skor: ${rule.score}, kat: ${rule.category})")
-                if (rule.score > maxScore) {
-                    maxScore = rule.score
-                    matchedCategory = rule.category
-                    matchedPattern = rule.pattern
-                }
-            }
-        }
+        val strongest = matched.filter { !it.weak }.maxByOrNull { it.score }
+        var score = strongest?.score ?: 0f
+        var category = strongest?.category ?: ""
+        var pattern = strongest?.pattern ?: ""
 
-        // 2. Augment: URL mencurigakan dalam pesan → skor naik
+        // URL di dalam pesan: mengaku brand bank tapi domainnya bukan resmi.
+        // Ini sinyal kuat dan berdiri sendiri.
         val extractedUrls = urlPattern.findAll(message).map { it.value }.toList()
-        if (extractedUrls.isNotEmpty()) {
-            Log.d(TAG, "URL ditemukan di pesan: $extractedUrls")
-            for (url in extractedUrls) {
-                // Cek brand mismatch di URL yang ada dalam pesan
-                val brandMismatchScore = checkUrlBrandMismatch(url)
-                if (brandMismatchScore > maxScore) {
-                    maxScore = brandMismatchScore
-                    matchedCategory = "URL_PHISHING"
-                    matchedPattern = url
-                }
+        for (url in extractedUrls) {
+            val mismatch = checkUrlBrandMismatch(url)
+            if (mismatch > score) {
+                score = mismatch; category = "URL_PHISHING"; pattern = url
             }
-            // Bonus skor jika ada URL + kata mencurigakan
-            if (maxScore > 0.40f) maxScore = minOf(maxScore + 0.15f, 0.99f)
         }
 
-        return if (maxScore >= THREAT_THRESHOLD) {
-            Log.d(TAG, "⚠️ PHISHING DETECTED! Skor: $maxScore - Kategori: $matchedCategory")
+        // Pola lemah hanya MENGUATKAN pola kuat, tidak pernah memicu sendiri.
+        val weakCount = matched.count { it.weak }
+        val distinctCategories = matched.map { it.category }.distinct().size
+        if (score > 0f) {
+            if (weakCount > 0) score += 0.05f * minOf(weakCount, 3)
+            if (distinctCategories >= 2) score += 0.10f
+            if (extractedUrls.isNotEmpty()) score += 0.10f
+            score = minOf(score, 0.99f)
+        }
+
+        // Ambang: satu pola kuat yang sangat spesifik sudah cukup; pola kuat
+        // yang lebih umum butuh dukungan (kategori kedua atau sebuah URL).
+        val isThreat = when {
+            score >= 0.85f -> true
+            score >= THREAT_THRESHOLD && (distinctCategories >= 2 || extractedUrls.isNotEmpty()) -> true
+            else -> false
+        }
+
+        return if (isThreat) {
+            Log.d(TAG, "⚠️ PENIPUAN TERDETEKSI! Skor: $score — $category")
             AnalysisResult.threat(
-                confidence = maxScore,
-                reason = buildReason(matchedCategory, matchedPattern, extractedUrls),
+                confidence = score,
+                reason = buildReason(category, pattern, extractedUrls),
                 category = ThreatCategory.SCAM_MESSAGE
             )
         } else {
-            Log.d(TAG, "✅ Pesan aman. Skor: $maxScore")
-            AnalysisResult.safe(1.0f - maxScore, "Tidak ada indikasi penipuan.")
+            Log.d(TAG, "✅ Pesan aman. Skor: $score (kuat=${strongest?.pattern}, lemah=$weakCount)")
+            AnalysisResult.safe(1.0f - score, "Tidak ada indikasi penipuan.")
         }
     }
 

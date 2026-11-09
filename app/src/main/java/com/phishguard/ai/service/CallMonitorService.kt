@@ -128,10 +128,12 @@ class CallMonitorService : Service() {
     }
 
     private fun sendLogToUI(message: String, source: String, type: String) {
-        val intent = Intent("com.phishguard.ai.LOG_UPDATE")
-        intent.putExtra("message", message)
-        intent.putExtra("source", source)
-        intent.putExtra("type", type)
+        val intent = Intent("com.phishguard.ai.LOG_UPDATE").apply {
+            setPackage(packageName)
+            putExtra("message", message)
+            putExtra("source", source)
+            putExtra("type", type)
+        }
         sendBroadcast(intent)
     }
 

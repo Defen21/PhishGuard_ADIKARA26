@@ -3,235 +3,237 @@ package com.phishguard.ai.ui
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
-import android.view.View
+import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import com.google.android.material.button.MaterialButton
+import com.phishguard.ai.PhishGuardService
 import com.phishguard.ai.R
 import com.phishguard.ai.core.network.FirebaseSyncManager
-import com.google.android.material.button.MaterialButton
+import com.phishguard.ai.core.tts.TextToSpeechEngine
+import com.phishguard.ai.data.AppPreferences
 
 /**
- * Full-screen warning Activity yang muncul di atas browser/app lain
- * saat phishing terdeteksi.
+ * Layar peringatan yang muncul di atas browser/aplikasi lain.
  *
- * Ditrigger oleh PhishGuardService via Intent.
- *
- * Fitur:
- * - Layar merah "AWAS BERBAHAYA!"
- * - Menampilkan URL yang diblokir dan alasannya
- * - HITL: Button "Aman" atau "Ya, Blokir"
- * - Jika Blokir → simpan lokal + upload ke Firebase (community crowd)
+ * Prinsip UX di sini:
+ *  - tampilkan NAMA SITUS besar-besar; itu satu-satunya hal yang benar-benar
+ *    perlu dinilai pengguna, bukan URL panjang penuh parameter
+ *  - tingkat risiko dibedakan (tinggi vs perlu diperiksa) agar peringatan
+ *    tidak semuanya terasa sama dan berhenti dibaca
+ *  - aksi aman jadi tombol utama, "situs ini aman" tetap satu ketukan —
+ *    salah tebak sistem tidak boleh menjebak pengguna
  */
 class WarningActivity : AppCompatActivity() {
 
     companion object {
-        const val EXTRA_PHISHING_URL      = "phishing_url"
-        const val EXTRA_REASON            = "reason"
-        const val EXTRA_SOURCE            = "source"
+        const val EXTRA_PHISHING_URL       = "phishing_url"
+        const val EXTRA_REASON             = "reason"
+        const val EXTRA_SOURCE             = "source"
         const val EXTRA_IS_PERMANENT_BLOCK = "is_permanent_block"
-        const val EXTRA_CONFIDENCE        = "confidence"
+        const val EXTRA_CONFIDENCE         = "confidence"
+
+        /** Di bawah ini deteksi disebut "perlu diperiksa", bukan "berbahaya". */
+        private const val HIGH_RISK_THRESHOLD = 0.80f
     }
 
     private val TAG = "WarningActivity"
+
+    /** Diaktifkan lewat Pengaturan → Voice Alerts. Toggle itu dulu tidak terhubung ke apa pun. */
+    private var tts: TextToSpeechEngine? = null
+
+    override fun onDestroy() {
+        tts?.shutdown()
+        super.onDestroy()
+    }
+
+    private fun speakIfEnabled(text: String) {
+        if (!AppPreferences(this).ttsEnabled) return
+        tts = TextToSpeechEngine(this)
+        // TTS butuh waktu inisialisasi; ucapkan setelah engine siap.
+        window.decorView.postDelayed({ tts?.speak(text) }, 900)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_warning)
 
-        // Ambil data dari intent
-        val url        = intent.getStringExtra(EXTRA_PHISHING_URL) ?: "Unknown URL"
-        val reason     = intent.getStringExtra(EXTRA_REASON)            ?: getString(R.string.warning_subtitle)
-        val source     = intent.getStringExtra(EXTRA_SOURCE)            ?: ""
+        val url        = intent.getStringExtra(EXTRA_PHISHING_URL) ?: "Tidak diketahui"
+        val reason     = intent.getStringExtra(EXTRA_REASON) ?: getString(R.string.warning_subtitle)
+        val source     = intent.getStringExtra(EXTRA_SOURCE).orEmpty()
         val confidence = intent.getFloatExtra(EXTRA_CONFIDENCE, 0.90f)
-
         val isPermanentBlock = intent.getBooleanExtra(EXTRA_IS_PERMANENT_BLOCK, false)
         val isSmsMode        = intent.getBooleanExtra("is_sms_mode", false)
 
-        // Bind UI
+        val ivIcon     = findViewById<ImageView>(R.id.ivRiskIcon)
+        val tvBadge    = findViewById<TextView>(R.id.tvRiskBadge)
+        val tvTitle    = findViewById<TextView>(R.id.tvWarningTitle)
+        val tvHost     = findViewById<TextView>(R.id.tvWarningHost)
         val tvReason   = findViewById<TextView>(R.id.tvWarningReason)
         val tvUrl      = findViewById<TextView>(R.id.tvWarningUrl)
+        val tvSource   = findViewById<TextView>(R.id.tvSource)
         val tvQuestion = findViewById<TextView>(R.id.tvQuestion)
-        val btnClose   = findViewById<MaterialButton>(R.id.btnCloseWarning)
+        val pbConf     = findViewById<ProgressBar>(R.id.pbConfidence)
+        val tvConf     = findViewById<TextView>(R.id.tvConfidence)
+        val btnBlock   = findViewById<MaterialButton>(R.id.btnCloseWarning)
         val btnSafe    = findViewById<MaterialButton>(R.id.btnMarkSafe)
 
-        tvReason.text = reason
-        tvUrl.text    = url
+        // ── Warna & label mengikuti tingkat risiko ──────────────────────
+        val highRisk = confidence >= HIGH_RISK_THRESHOLD
+        val accent = ContextCompat.getColor(this, if (highRisk) R.color.error else R.color.warning)
+        val accentDark = ContextCompat.getColor(this, if (highRisk) R.color.error_dark else R.color.warning_dark)
+        val accentLight = ContextCompat.getColor(this, if (highRisk) R.color.error_light else R.color.warning_light)
 
-        // ── Helper: kembali ke Home screen ──────────────────────────────
-        fun goHomeAndFinish() {
-            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        ivIcon.setColorFilter(accent)
+        findViewById<android.view.View>(R.id.iconRiskContainer).background
+            ?.mutate()?.setTint(accentLight)
+        tvBadge.background?.mutate()?.setTint(accentLight)
+        tvBadge.setTextColor(accentDark)
+        tvBadge.setText(if (highRisk) R.string.risk_high else R.string.risk_medium)
+        tvHost.setTextColor(accentDark)
+        pbConf.progressTintList = android.content.res.ColorStateList.valueOf(accent)
+        btnBlock.backgroundTintList = android.content.res.ColorStateList.valueOf(accent)
+
+        val percent = (confidence.coerceIn(0f, 1f) * 100).toInt()
+        pbConf.progress = percent
+        tvConf.text = "$percent%"
+
+        tvReason.text = reason
+        tvUrl.text = url
+        tvSource.text = if (source.isBlank()) "" else getString(R.string.warning_source, source)
+        tvSource.visibility = if (source.isBlank()) android.view.View.GONE else android.view.View.VISIBLE
+
+        // ── MODE: pesan SMS / chat ──────────────────────────────────────
+        if (isSmsMode) {
+            val phoneNumber = intent.getStringExtra("phone_number").orEmpty()
+            tvTitle.setText(R.string.warning_title_sms)
+            tvHost.text = phoneNumber.ifBlank { source }
+            tvHost.visibility = if (tvHost.text.isNullOrBlank()) android.view.View.GONE else android.view.View.VISIBLE
+            tvQuestion.setText(R.string.warning_sms_advice)
+
+            if (phoneNumber.isNotBlank()) {
+                btnBlock.setText(R.string.warning_btn_block_number)
+                btnSafe.setText(R.string.warning_btn_ignore)
+                btnBlock.setOnClickListener {
+                    setBusy(btnBlock, btnSafe)
+                    sendToService(PhishGuardService.ACTION_BLOCK_NUMBER) {
+                        putExtra("phone_number", phoneNumber)
+                    }
+                    logActivity("Blocked SMS from: $phoneNumber", "SMS", "PHISHING", countAsBlocked = true)
+                    Toast.makeText(this, getString(R.string.risk_number_blocked, phoneNumber), Toast.LENGTH_SHORT).show()
+                    finish()
+                }
+            } else {
+                // Aplikasi chat tanpa nomor pengirim (WhatsApp, Telegram, MMS)
+                btnBlock.setText(R.string.warning_btn_close)
+                btnSafe.setText(R.string.warning_btn_ignore)
+                btnBlock.setOnClickListener { finish() }
             }
-            startActivity(homeIntent)
+            btnSafe.setOnClickListener { finish() }
+            return
+        }
+
+        // ── MODE: sudah diblokir permanen ───────────────────────────────
+        if (isPermanentBlock) {
+            tvQuestion.setText(R.string.warning_blocked_permanent)
+            btnSafe.visibility = android.view.View.GONE
+            btnBlock.setText(R.string.warning_btn_block)
+            btnBlock.setOnClickListener { goHomeAndFinish() }
+            return
+        }
+
+        // ── MODE: keputusan HITL ────────────────────────────────────────
+        tvTitle.setText(if (highRisk) R.string.warning_title else R.string.warning_title_medium)
+        tvHost.text = hostOf(url)
+        speakIfEnabled("${tvTitle.text}. ${hostOf(url)}")
+
+        btnSafe.setOnClickListener {
+            sendToService(PhishGuardService.ACTION_MARK_SAFE) { putExtra("target_url", url) }
             finish()
         }
 
-        // ── Helper: upload URL phishing ke Firebase (community crowd) ───
-        fun uploadToFirebase(targetUrl: String, targetReason: String) {
-            FirebaseSyncManager(applicationContext).uploadPhishingUrl(
-                url        = targetUrl,
-                reason     = targetReason,
-                confidence = confidence,
-                onSuccess  = {
-                    Log.d(TAG, "✅ URL berhasil dilaporkan ke komunitas: $targetUrl")
-                    runOnUiThread {
-                        Toast.makeText(
-                            this,
-                            "🛡️ URL dilaporkan ke komunitas PhishGuard!",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                },
-                onFailure  = { err ->
-                    Log.e(TAG, "Gagal upload ke Firebase: $err")
-                    // Tetap blokir secara lokal meski upload gagal
-                }
-            )
-        }
+        btnBlock.setOnClickListener {
+            setBusy(btnBlock, btnSafe)
 
-        // ── MODE: SMS / Chat pesan (tidak ada aksi URL upload) ──────────
-        if (isSmsMode) {
-            val phoneNumber = intent.getStringExtra("phone_number") ?: ""
-            
-            Log.d(TAG, "=== SMS MODE DEBUG ===")
-            Log.d(TAG, "isSmsMode: true")
-            Log.d(TAG, "phoneNumber: '$phoneNumber'")
-            Log.d(TAG, "phoneNumber.isEmpty(): ${phoneNumber.isEmpty()}")
-            
-            tvReason.text  = "Pesan ini terindikasi Penipuan!"
-            tvQuestion.text = "Hindari merespon atau mengklik tautan apapun yang ada di dalamnya."
-            tvQuestion.setTextColor(android.graphics.Color.parseColor("#FFCC00"))
+            // 1. Simpan keputusan ke service (Room DB + daftar blokir + Back)
+            sendToService(PhishGuardService.ACTION_MARK_THREAT) { putExtra("target_url", url) }
 
-            // Tombol "Blokir Nomor" HANYA jika ada phone number
-            if (phoneNumber.isNotEmpty()) {
-                Log.d(TAG, "Phone number available - showing 'Blokir Nomor' button")
-                btnClose.text = "Blokir Nomor"
-                btnSafe.text = "Abaikan"
-                
-                btnClose.setOnClickListener {
-                    btnClose.text = "Memblokir..."
-                    btnClose.isEnabled = false
-                    btnSafe.isEnabled = false
-                    
-                    // 1. Broadcast untuk blacklist nomor
-                    val blacklistIntent = Intent("com.phishguard.ai.BLOCK_NUMBER").apply {
-                        putExtra("phone_number", phoneNumber)
-                    }
-                    sendBroadcast(blacklistIntent)
-                    
-                    // 2. Save log
-                    val prefs = getSharedPreferences("activity_log", Context.MODE_PRIVATE)
-                    val existingLogs = prefs.getStringSet("logs", mutableSetOf()) ?: mutableSetOf()
-                    val timestamp = System.currentTimeMillis()
-                    val logEntry = "$timestamp|Blocked SMS from: $phoneNumber|SMS|PHISHING"
-                    existingLogs.add(logEntry)
-                    prefs.edit().putStringSet("logs", existingLogs).apply()
-                    
-                    // Increment blocked counter
-                    val blockedCount = prefs.getInt("blocked_count", 0)
-                    prefs.edit().putInt("blocked_count", blockedCount + 1).apply()
-                    
-                    // 3. Broadcast untuk update UI
-                    val logIntent = Intent("com.phishguard.ai.LOG_UPDATE").apply {
-                        putExtra("message", "Blocked SMS from: $phoneNumber")
-                        putExtra("source", "SMS")
-                        putExtra("type", "PHISHING")
-                    }
-                    sendBroadcast(logIntent)
-                    
-                    Toast.makeText(this, "Nomor $phoneNumber diblokir", Toast.LENGTH_SHORT).show()
-                    finish()
-                }
-                
-                btnSafe.text = "Abaikan"
-                btnSafe.setOnClickListener { finish() }
-            } else {
-                // Fallback: messaging app tanpa nomor (WhatsApp, Telegram, MMS, dll)
-                Log.d(TAG, "No phone number - showing generic warning buttons")
-                btnClose.text = "Tutup"
-                btnSafe.text = "Abaikan"
-                
-                btnClose.setOnClickListener { finish() }
-                btnSafe.setOnClickListener { finish() }
-            }
+            // 2. Catat ke log aktivitas
+            logActivity("Blocked: $url", "Browser", "PHISHING", countAsBlocked = true)
 
-        // ── MODE: URL sudah pernah diblokir permanen ─────────────────────
-        } else if (isPermanentBlock) {
-            tvQuestion.text = "Situs ini telah terblokir secara permanen di perangkat Anda."
-            tvQuestion.setTextColor(android.graphics.Color.parseColor("#FFCC00"))
-            btnSafe.visibility = View.GONE
+            // 3. Bagikan ke database komunitas agar pengguna lain ikut terlindungi
+            uploadToFirebase(url, reason, confidence)
 
-            btnClose.text = "Tutup Halaman"
-            btnClose.setOnClickListener { goHomeAndFinish() }
-
-        // ── MODE: Konfirmasi HITL — user belum pernah judge URL ini ───────
-        } else {
-            // Tombol "AMAN" — user yakin situs ini bukan phishing
-            btnSafe.setOnClickListener {
-                val whitelistIntent = Intent("com.phishguard.ai.MARK_SAFE").apply {
-                    putExtra("target_url", url)
-                }
-                sendBroadcast(whitelistIntent)
-                finish()
-            }
-
-            // Tombol "BLOKIR" — user konfirmasi phishing
-            // → simpan lokal + upload ke Firebase agar user lain terlindungi
-            btnClose.setOnClickListener {
-                btnClose.text       = "Memblokir..."
-                btnClose.isEnabled  = false
-                btnSafe.isEnabled   = false
-
-                // 1. Broadcast ke PhishGuardService (simpan ke local Room DB + Back/block)
-                val blacklistIntent = Intent("com.phishguard.ai.MARK_THREAT").apply {
-                    putExtra("target_url", url)
-                    setPackage("com.phishguard.ai")   // pastikan sampai ke receiver service
-                }
-                sendBroadcast(blacklistIntent)
-
-                // 2. Save log to SharedPreferences (persistent)
-                val prefs = getSharedPreferences("activity_log", Context.MODE_PRIVATE)
-                val existingLogs = prefs.getStringSet("logs", mutableSetOf()) ?: mutableSetOf()
-                val timestamp = System.currentTimeMillis()
-                val logEntry = "$timestamp|Blocked: $url|Browser|PHISHING"
-                existingLogs.add(logEntry)
-                prefs.edit().putStringSet("logs", existingLogs).apply()
-                
-                // Increment blocked counter
-                val blockedCount = prefs.getInt("blocked_count", 0)
-                prefs.edit().putInt("blocked_count", blockedCount + 1).apply()
-                
-                // 3. Also broadcast for immediate update (if Fragment is visible)
-                val logIntent = Intent("com.phishguard.ai.LOG_UPDATE").apply {
-                    putExtra("message", "Blocked: $url")
-                    putExtra("source", "Browser")
-                    putExtra("type", "PHISHING")
-                }
-                sendBroadcast(logIntent)
-
-                // 3. Upload ke Firebase Firestore (community crowd database)
-                //    → versi server akan di-bump → semua user lain akan sync URL ini
-                uploadToFirebase(url, reason)
-
-                // ── Helper: tutup warning saja. Navigasi Back ditangani oleh service
-                // (PhishGuardService.scheduleBackAfterBlock pada MARK_THREAT),
-                // agar tidak dobel-nav dan timing-nya terpusat di service.
-                fun goBackAfterBlock() { finish() }
-
-                // 4. Tutup warning; service akan menavigasi kembali satu halaman
-                goBackAfterBlock()
-            }
+            // 4. Tutup; service yang menavigasi kembali satu halaman
+            finish()
         }
     }
 
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        super.onBackPressed()
+    // ── Helper ──────────────────────────────────────────────────────────
+
+    /** Broadcast eksplisit ke paket sendiri — tanpa ini receiver bisa tidak kebagian. */
+    private fun sendToService(action: String, extras: Intent.() -> Unit) {
+        sendBroadcast(Intent(action).apply {
+            setPackage(packageName)
+            extras()
+        })
+    }
+
+    private fun setBusy(primary: MaterialButton, secondary: MaterialButton) {
+        primary.setText(R.string.warning_blocking)
+        primary.isEnabled = false
+        secondary.isEnabled = false
+    }
+
+    private fun hostOf(url: String): String =
+        url.removePrefix("https://").removePrefix("http://")
+            .substringBefore('/').substringBefore('?').removePrefix("www.")
+            .ifBlank { url.take(60) }
+
+    private fun goHomeAndFinish() {
+        startActivity(Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        })
         finish()
+    }
+
+    private fun logActivity(message: String, source: String, type: String, countAsBlocked: Boolean) {
+        val prefs = getSharedPreferences("activity_log", Context.MODE_PRIVATE)
+        val logs = (prefs.getStringSet("logs", emptySet()) ?: emptySet()).toMutableSet()
+        logs.add("${System.currentTimeMillis()}|${message.replace('|', ' ')}|$source|$type")
+        prefs.edit().apply {
+            putStringSet("logs", logs)
+            if (countAsBlocked) putInt("blocked_count", prefs.getInt("blocked_count", 0) + 1)
+        }.apply()
+
+        sendBroadcast(Intent("com.phishguard.ai.LOG_UPDATE").apply {
+            setPackage(packageName)
+            putExtra("message", message)
+            putExtra("source", source)
+            putExtra("type", type)
+        })
+    }
+
+    private fun uploadToFirebase(url: String, reason: String, confidence: Float) {
+        FirebaseSyncManager(applicationContext).uploadPhishingUrl(
+            url = url,
+            reason = reason,
+            confidence = confidence,
+            onSuccess = {
+                Log.d(TAG, "URL dilaporkan ke komunitas: $url")
+                runOnUiThread {
+                    Toast.makeText(this, R.string.risk_reported, Toast.LENGTH_SHORT).show()
+                }
+            },
+            onFailure = { err ->
+                // Blokir lokal tetap berlaku meski unggahan gagal.
+                Log.e(TAG, "Gagal upload ke Firebase: $err")
+            }
+        )
     }
 }

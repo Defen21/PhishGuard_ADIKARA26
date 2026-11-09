@@ -59,10 +59,28 @@
     <string name="btn_manage">Manage Permissions</string>
 
     <!-- Warning Screen -->
-    <string name="warning_title">AWAS BERBAHAYA!</string>
-    <string name="warning_subtitle">Akses Diblokir: Terindikasi Penipuan</string>
-    <string name="warning_btn_close">Tutup Peringatan (Keluar dari Situs)</string>
+    <string name="warning_title">Situs ini berbahaya</string>
+    <string name="warning_title_medium">Situs ini perlu diperiksa</string>
+    <string name="warning_title_sms">Pesan ini terindikasi penipuan</string>
+    <string name="warning_subtitle">Terindikasi berusaha mencuri data Anda.</string>
+    <string name="warning_question">Apakah menurut Anda ini memang penipuan?</string>
+    <string name="warning_btn_block">Keluar dari situs ini</string>
+    <string name="warning_btn_safe">Situs ini aman, jangan peringatkan lagi</string>
+    <string name="warning_btn_close">Tutup</string>
+    <string name="warning_btn_ignore">Abaikan</string>
+    <string name="warning_btn_block_number">Blokir nomor ini</string>
+    <string name="warning_blocked_permanent">Situs ini sudah Anda blokir sebelumnya.</string>
+    <string name="warning_sms_advice">Jangan balas dan jangan klik tautan apa pun di dalamnya.</string>
+    <string name="warning_blocking">Memblokir…</string>
+    <string name="warning_source">Terdeteksi di %1$s</string>
     <string name="warning_url_label">URL yang diblokir:</string>
+
+    <!-- Tingkat risiko -->
+    <string name="risk_high">RISIKO TINGGI</string>
+    <string name="risk_medium">PERLU DIPERIKSA</string>
+    <string name="risk_meter_label">Keyakinan</string>
+    <string name="risk_reported">Dilaporkan ke komunitas PhishGuard</string>
+    <string name="risk_number_blocked">Nomor %1$s diblokir</string>
 
     <!-- Detected Apps -->
     <string name="detected_apps_header">Ditemukan di HP Anda</string>

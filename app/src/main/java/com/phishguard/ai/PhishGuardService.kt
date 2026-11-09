@@ -1,6 +1,7 @@
 package com.phishguard.ai
 
 import android.accessibilityservice.AccessibilityService
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -11,10 +12,14 @@ import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import com.phishguard.ai.core.ai.AnalysisPipeline
 import com.phishguard.ai.core.ai.AnalysisResult
 import com.phishguard.ai.core.ai.LayeredResult
 import com.phishguard.ai.core.ai.ThreatLayer
+import com.phishguard.ai.core.ai.UrlRiskScorer
+import com.phishguard.ai.data.db.PhishingNumber
 import com.phishguard.ai.core.network.FirebaseSyncManager
 import com.phishguard.ai.core.network.ServerSyncManager
 import com.phishguard.ai.data.AppPreferences
@@ -39,7 +44,10 @@ class PhishGuardService : AccessibilityService() {
     // halaman phising yang sama (fenomena "sudah klik blokir tetapi tidak ke back").
     private var backMuteUntil = 0L
 
-    // HITL: URL yang ditandai AMAN oleh pengguna (sesi ini)
+    // HITL: URL yang ditandai AMAN oleh pengguna → persisten. Dulu hanya
+    // bertahan satu sesi, sehingga keputusan "Aman" pengguna hilang setelah
+    // service restart dan situs yang sama diperingatkan lagi (false positive
+    // yang terasa paling menjengkelkan).
     private val hitlWhitelistUrls = mutableSetOf<String>()
 
     // HITL: URL yang ditandai PHISHING oleh pengguna → persisten via SharedPreferences
@@ -48,15 +56,9 @@ class PhishGuardService : AccessibilityService() {
     // BroadcastReceiver untuk keputusan HITL dari WarningActivity
     private val hitlReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            // Aksi "GO_BACK": setelah user blokir, kembali satu halaman (Back)
-            // dari browser — bukan lompat ke Home screen.
-            if (intent?.action == "com.phishguard.ai.GO_BACK") {
-                Log.d(TAG, "GO_BACK: navigasi kembali satu halaman.")
-                try {
-                    performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                } catch (e: Exception) {
-                    Log.e(TAG, "GO_BACK performGlobalAction error", e)
-                }
+            if (intent?.action == ACTION_BLOCK_NUMBER) {
+                val number = intent.getStringExtra("phone_number").orEmpty()
+                if (number.isNotBlank()) blockPhoneNumber(number)
                 return
             }
 
@@ -64,19 +66,20 @@ class PhishGuardService : AccessibilityService() {
             val normalized = normalizeUrl(targetUrl)
 
             when (intent.action) {
-                "com.phishguard.ai.MARK_SAFE" -> {
+                ACTION_MARK_SAFE -> {
                     Log.d(TAG, "HITL ✅ User menandai AMAN: $normalized")
                     hitlWhitelistUrls.add(normalized)
+                    saveUrlSet(PREF_WHITELIST, hitlWhitelistUrls)
                     // Reset warning tracker agar tidak re-trigger
                     if (normalizeUrl(warningShownForUrl) == normalized) {
                         warningShownForUrl = ""
                         lastDetectedUrl = ""
                     }
                 }
-                "com.phishguard.ai.MARK_THREAT" -> {
+                ACTION_MARK_THREAT -> {
                     Log.d(TAG, "HITL 🚫 User menandai PHISHING: $normalized")
                     hitlBlacklistUrls.add(normalized)
-                    saveToPersistentBlacklist(normalized)
+                    saveUrlSet(PREF_BLACKLIST, hitlBlacklistUrls)
                     saveToRoomBlacklist(normalized)
                     // Setelah blokir, navigasi KEMBALI (Back) dari service dengan
                     // delay agar aktivitas warning sempat tertutup (finish) dulu,
@@ -98,14 +101,18 @@ class PhishGuardService : AccessibilityService() {
             prefs = AppPreferences(this)
             isReady = true
 
-            // Load persistent blacklist dari storage sebelumnya
-            loadPersistentBlacklist()
+            // Muat keputusan HITL pengguna dari sesi sebelumnya
+            hitlBlacklistUrls.addAll(loadUrlSet(PREF_BLACKLIST))
+            hitlWhitelistUrls.addAll(loadUrlSet(PREF_WHITELIST))
+            Log.d(TAG, "HITL dimuat: ${hitlBlacklistUrls.size} blokir, ${hitlWhitelistUrls.size} aman")
 
-            // Register HITL BroadcastReceiver untuk AMAN & BLOKIR
+            createAlertChannel()
+
+            // Register HITL BroadcastReceiver untuk AMAN, BLOKIR & BLOKIR NOMOR
             val filter = IntentFilter().apply {
-                addAction("com.phishguard.ai.MARK_SAFE")
-                addAction("com.phishguard.ai.MARK_THREAT")
-                addAction("com.phishguard.ai.GO_BACK")
+                addAction(ACTION_MARK_SAFE)
+                addAction(ACTION_MARK_THREAT)
+                addAction(ACTION_BLOCK_NUMBER)
             }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(hitlReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -264,7 +271,13 @@ class PhishGuardService : AccessibilityService() {
                         rootNode2.recycle()
                     }
                 }
-                if (rawUrl.isBlank() || rawUrl.length < 4) return
+                // Bilah alamat juga menampilkan kueri pencarian, judul halaman,
+                // atau teks placeholder. Menganalisis itu sebagai URL hanya
+                // menghasilkan peringatan palsu — saring dulu.
+                if (!looksLikeUrl(rawUrl)) {
+                    Log.v(TAG, "Bukan bentuk URL, lewati: ${rawUrl.take(40)}")
+                    return
+                }
 
                 // UNWRAP AMP / redirect-wrapper: URL bar sering menunjukkan
                 // "google.com/amp/s/<real-domain>/..." padahal domain phishing
@@ -394,16 +407,47 @@ class PhishGuardService : AccessibilityService() {
     }
 
     /**
-     * Ekspor host sebenarnya dari URL yang dibungkus AMP/google redirect.
-     * Memperbaiki bypass "google.com/amp/s/<real-domain>/".
+     * Apakah teks ini berbentuk URL? Bilah alamat browser juga memuat kueri
+     * pencarian ("tiket kereta murah") dan judul halaman. Syarat: satu kata,
+     * ada titik, dan ada TLD huruf di hostname — atau berawalan skema.
+     */
+    private fun looksLikeUrl(text: String): Boolean {
+        val t = text.trim()
+        if (t.length < 4 || t.any { it.isWhitespace() }) return false
+        if (t.startsWith("http://") || t.startsWith("https://")) return true
+        val host = t.substringBefore('/').substringBefore('?')
+        if (!host.contains('.')) return false
+        return host.substringAfterLast('.').let { tld ->
+            tld.length in 2..24 && tld.all { it.isLetterOrDigit() || it == '-' }
+        }
+    }
+
+    /**
+     * Ekspor host sebenarnya dari URL yang dibungkus AMP atau redirector.
+     * Memperbaiki bypass "google.com/amp/s/<real-domain>/" dan
+     * "apa-saja.com/go?url=https://<real-domain>/".
      */
     private fun unwrapRedirectUrl(url: String): String {
         val s = url.lowercase()
+
+        // Parameter redirect: ?url=, &redirect=, ?target=, ?next=, ?u=
+        Regex("""[?&](?:url|redirect|redirect_url|target|next|dest|u)=([^&]+)""")
+            .find(s)?.groupValues?.get(1)?.let { encoded ->
+                val decoded = try {
+                    java.net.URLDecoder.decode(encoded, "UTF-8")
+                } catch (e: Exception) {
+                    encoded
+                }
+                val host = decoded.removePrefix("http://").removePrefix("https://")
+                if (host.contains('.')) return host
+            }
+
         // google.com/amp/s/<domain>/... dan google.com/amp/<domain>/...
         val ampIdx = s.indexOf("/amp/")
         if (ampIdx != -1) {
             val after = s.substring(ampIdx + 5)
-            val cleaned = after.removePrefix("/s/").removePrefix("s/").removePrefix("http://").removePrefix("https://")
+            val cleaned = after.removePrefix("/s/").removePrefix("s/")
+                .removePrefix("http://").removePrefix("https://")
             if (cleaned.isNotBlank() && cleaned.contains('.')) return cleaned
         }
         return url
@@ -459,16 +503,80 @@ class PhishGuardService : AccessibilityService() {
         }, 600)
     }
 
+    /**
+     * Respons BERTINGKAT sesuai keyakinan — perbaikan utama pengalaman pakai.
+     *
+     * Sebelumnya setiap deteksi, sekuat apa pun sinyalnya, langsung membajak
+     * layar dengan overlay merah. Satu tebakan meleset = pengguna terjegal.
+     * Sekarang:
+     *   DANGEROUS (≥0,80) → overlay layar penuh, situs benar-benar dihentikan
+     *   SUSPICIOUS       → notifikasi yang bisa diabaikan, browsing jalan terus
+     *   selain itu       → hanya masuk log
+     */
     private fun handleAnalysisResult(result: AnalysisResult, item: String, source: String) {
-        if (result.isThreat) {
-            sendLogToUI("⚠️ ${result.threatType}: ${item.take(80)} — ${result.reason}", source, "PHISHING")
-            launchWarning(item, result.reason, source)
-        } else {
+        if (!result.isThreat) {
             sendLogToUI("✅ Aman: ${item.take(80)}", source, "SAFE")
             if (normalizeUrl(item) == normalizeUrl(warningShownForUrl)) {
                 warningShownForUrl = ""
             }
+            return
         }
+
+        val dangerous = result.metadata["level"] == "DANGEROUS" ||
+                result.confidence >= UrlRiskScorer.THRESHOLD_DANGEROUS
+
+        if (dangerous) {
+            sendLogToUI("⚠️ ${result.threatType}: ${item.take(80)} — ${result.reason}", source, "PHISHING")
+            launchWarning(item, result.reason, source, confidence = result.confidence)
+        } else {
+            sendLogToUI("🟡 Mencurigakan: ${item.take(80)} — ${result.reason}", source, "SUSPICIOUS")
+            notifySuspicious(item, result.reason, result.confidence)
+        }
+    }
+
+    /**
+     * Peringatan lunak: notifikasi, bukan overlay. Pengguna tetap memegang
+     * kendali — bisa lanjut, atau membuka detail untuk memblokir.
+     */
+    private fun notifySuspicious(url: String, reason: String, confidence: Float) {
+        try {
+            val host = url.removePrefix("https://").removePrefix("http://").substringBefore('/')
+            val detail = Intent(this, WarningActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(WarningActivity.EXTRA_PHISHING_URL, url)
+                putExtra(WarningActivity.EXTRA_REASON, reason)
+                putExtra(WarningActivity.EXTRA_SOURCE, "Browser")
+                putExtra(WarningActivity.EXTRA_CONFIDENCE, confidence)
+            }
+            val pending = PendingIntent.getActivity(
+                this, url.hashCode(), detail,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val notif = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("Situs perlu diperiksa: $host")
+                .setContentText(reason)
+                .setStyle(NotificationCompat.BigTextStyle().bigText("$reason\n\nKetuk untuk melihat detail dan memblokir bila memang penipuan."))
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setColor(0xFFF59E0B.toInt())
+                .setAutoCancel(true)
+                .setContentIntent(pending)
+                .build()
+            NotificationManagerCompat.from(this).notify(url.hashCode(), notif)
+        } catch (e: Exception) {
+            Log.e(TAG, "notifySuspicious error", e)
+        }
+    }
+
+    private fun createAlertChannel() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) return
+        val channel = android.app.NotificationChannel(
+            ALERT_CHANNEL_ID,
+            "Peringatan situs mencurigakan",
+            android.app.NotificationManager.IMPORTANCE_DEFAULT
+        ).apply { description = "Situs dengan sinyal mencurigakan tapi belum pasti berbahaya" }
+        getSystemService(android.app.NotificationManager::class.java)
+            ?.createNotificationChannel(channel)
     }
 
     /**
@@ -593,7 +701,13 @@ class PhishGuardService : AccessibilityService() {
         )
     }
 
-    private fun launchWarning(url: String, reason: String, source: String, isPermanentBlock: Boolean = false) {
+    private fun launchWarning(
+        url: String,
+        reason: String,
+        source: String,
+        isPermanentBlock: Boolean = false,
+        confidence: Float = 0.9f
+    ) {
         try {
             warningShownForUrl = url
             val intent = Intent(this, WarningActivity::class.java).apply {
@@ -602,6 +716,7 @@ class PhishGuardService : AccessibilityService() {
                 putExtra(WarningActivity.EXTRA_REASON, reason)
                 putExtra(WarningActivity.EXTRA_SOURCE, source)
                 putExtra(WarningActivity.EXTRA_IS_PERMANENT_BLOCK, isPermanentBlock)
+                putExtra(WarningActivity.EXTRA_CONFIDENCE, confidence)
             }
             startActivity(intent)
         } catch (e: Exception) {
@@ -642,28 +757,46 @@ class PhishGuardService : AccessibilityService() {
         return regex.find(source)?.groupValues?.get(1) ?: ""
     }
 
-    // Simpan blacklist ke SharedPreferences agar persisten
-    private fun saveToPersistentBlacklist(url: String) {
+    // Simpan / muat keputusan HITL (blokir maupun aman) agar persisten
+    private fun saveUrlSet(key: String, urls: Set<String>) {
         try {
-            val sp = getSharedPreferences("phishguard_blacklist", Context.MODE_PRIVATE)
-            val existing = sp.getStringSet("urls", mutableSetOf()) ?: mutableSetOf()
-            val updated = existing.toMutableSet().apply { add(url) }
-            sp.edit().putStringSet("urls", updated).apply()
-            Log.d(TAG, "Blacklist saved: $url (total: ${updated.size})")
+            getSharedPreferences("phishguard_blacklist", Context.MODE_PRIVATE)
+                .edit().putStringSet(key, urls.toSet()).apply()
+            Log.d(TAG, "HITL $key disimpan (${urls.size} entri)")
         } catch (e: Exception) {
-            Log.e(TAG, "Error saving blacklist", e)
+            Log.e(TAG, "Error saving $key", e)
         }
     }
 
-    // Load blacklist dari penyimpanan sebelumnya
-    private fun loadPersistentBlacklist() {
-        try {
-            val sp = getSharedPreferences("phishguard_blacklist", Context.MODE_PRIVATE)
-            val saved = sp.getStringSet("urls", emptySet()) ?: emptySet()
-            hitlBlacklistUrls.addAll(saved)
-            Log.d(TAG, "Loaded ${hitlBlacklistUrls.size} blacklisted URLs dari storage")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading blacklist", e)
+    private fun loadUrlSet(key: String): Set<String> = try {
+        getSharedPreferences("phishguard_blacklist", Context.MODE_PRIVATE)
+            .getStringSet(key, emptySet()) ?: emptySet()
+    } catch (e: Exception) {
+        Log.e(TAG, "Error loading $key", e)
+        emptySet()
+    }
+
+    /**
+     * Tombol "Blokir Nomor" di overlay SMS. Sebelumnya broadcast ini tidak
+     * punya penerima sama sekali — nomor hanya tercatat di log dan tidak
+     * pernah masuk database, sehingga SMS berikutnya lolos lagi.
+     */
+    private fun blockPhoneNumber(number: String) {
+        kotlin.concurrent.thread {
+            try {
+                PhishingDatabase.getInstance(applicationContext).phishingNumberDao().insert(
+                    PhishingNumber(
+                        number = number,
+                        reason = "Diblokir oleh pengguna via HITL",
+                        source = "user_report",
+                        confidence = 1.0f
+                    )
+                )
+                Log.d(TAG, "Nomor diblokir & disimpan ke DB: $number")
+                sendLogToUI("🚫 Nomor $number diblokir.", "SMS", "PHISHING")
+            } catch (e: Exception) {
+                Log.e(TAG, "Gagal menyimpan nomor blokir", e)
+            }
         }
     }
 
@@ -703,23 +836,38 @@ class PhishGuardService : AccessibilityService() {
 
     private fun sendLogToUI(message: String, source: String, type: String) {
         try {
-            val intent = Intent("com.phishguard.ai.LOG_UPDATE")
-            intent.putExtra("message", message)
-            intent.putExtra("source", source)
-            intent.putExtra("type", type)
+            // setPackage: log memuat URL yang dikunjungi pengguna — jangan
+            // disiarkan sebagai broadcast implisit yang bisa dibaca app lain.
+            val intent = Intent("com.phishguard.ai.LOG_UPDATE").apply {
+                setPackage(packageName)
+                putExtra("message", message)
+                putExtra("source", source)
+                putExtra("type", type)
+            }
             sendBroadcast(intent)
 
             // Persist ke activity_log agar gap deteksi tampak di log (SAFE ikut masuk)
             val prefs = getSharedPreferences("activity_log", Context.MODE_PRIVATE)
-            val existing = (prefs.getStringSet("logs", mutableSetOf()) ?: mutableSetOf()).toMutableSet()
-            var safeMessage = message
-            if (safeMessage.contains("|")) safeMessage = safeMessage.replace("|", " ")
+            val existing = (prefs.getStringSet("logs", emptySet()) ?: emptySet()).toMutableList()
+            val safeMessage = message.replace('|', ' ')
             existing.add("${System.currentTimeMillis()}|$safeMessage|$source|$type")
-            if (existing.size > 200) {
-                existing.removeAll(existing.take(existing.size - 200))
-            }
-            prefs.edit().putStringSet("logs", existing).apply()
+            // Buang yang PALING LAMA. Versi lama memangkas Set tanpa urutan,
+            // jadi entri yang terhapus acak — kadang justru yang terbaru.
+            val trimmed = existing
+                .sortedByDescending { it.substringBefore('|').toLongOrNull() ?: 0L }
+                .take(200).toSet()
+            prefs.edit().putStringSet("logs", trimmed).apply()
         } catch (e: Exception) {}
+    }
+
+    companion object {
+        const val ACTION_MARK_SAFE    = "com.phishguard.ai.MARK_SAFE"
+        const val ACTION_MARK_THREAT  = "com.phishguard.ai.MARK_THREAT"
+        const val ACTION_BLOCK_NUMBER = "com.phishguard.ai.BLOCK_NUMBER"
+
+        private const val PREF_BLACKLIST = "urls"
+        private const val PREF_WHITELIST = "safe_urls"
+        private const val ALERT_CHANNEL_ID = "phishguard_suspicious"
     }
 
     private fun getAppName(packageName: String): String {

@@ -1,8 +1,13 @@
 package com.phishguard.ai
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.phishguard.ai.core.network.FirebaseSyncManager
 import com.phishguard.ai.core.security.AppIntegrityChecker
@@ -14,6 +19,10 @@ import com.phishguard.ai.ui.SettingsFragment
 import com.google.android.material.bottomnavigation.BottomNavigationView
 
 class MainActivity : AppCompatActivity() {
+
+    private companion object {
+        const val REQ_PERMISSIONS = 1001
+    }
 
     private val dashboardFragment = DashboardFragment()
     private val protectionFragment = ProtectionFragment()
@@ -37,6 +46,8 @@ class MainActivity : AppCompatActivity() {
 
         // Seed database domain resmi bank Indonesia
         DatabaseSeeder.seedIfNeeded(this)
+
+        requestRuntimePermissions()
 
         // 🔥 BULK UPLOAD EXCEL URL KE FIREBASE
         // Fungsi ini akan upload ribuan URL dari official_data.txt ke Firestore.
@@ -69,6 +80,32 @@ class MainActivity : AppCompatActivity() {
                 activeFragment = selectedFragment
             }
             true
+        }
+    }
+
+    /**
+     * Minta izin berbahaya yang dideklarasikan di manifest.
+     *
+     * Tanpa ini SmsReceiver tidak pernah menerima SMS, CallMonitorService
+     * tidak bisa merekam, dan notifikasi peringatan tidak muncul di Android 13+
+     * — izin di manifest saja tidak cukup sejak Android 6.
+     */
+    private fun requestRuntimePermissions() {
+        val wanted = mutableListOf(
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_SMS,
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.RECORD_AUDIO
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            wanted += Manifest.permission.POST_NOTIFICATIONS
+        }
+
+        val missing = wanted.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQ_PERMISSIONS)
         }
     }
 

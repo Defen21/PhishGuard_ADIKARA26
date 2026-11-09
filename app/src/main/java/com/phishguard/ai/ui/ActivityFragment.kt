@@ -83,7 +83,7 @@ class ActivityFragment : Fragment() {
         
         val filter = IntentFilter("com.phishguard.ai.LOG_UPDATE")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requireContext().registerReceiver(logReceiver, filter, Context.RECEIVER_EXPORTED)
+            requireContext().registerReceiver(logReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             requireContext().registerReceiver(logReceiver, filter)
         }

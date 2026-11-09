@@ -22,6 +22,22 @@ import com.google.android.material.button.MaterialButton
 
 class DashboardFragment : Fragment() {
 
+    companion object {
+        /** Jenis log yang dihitung sebagai "URL dipindai". */
+        private val SCANNED_TYPES = setOf(
+            ActivityLogItem.LogType.SAFE,
+            ActivityLogItem.LogType.SUSPICIOUS,
+            ActivityLogItem.LogType.PHISHING
+        )
+
+        /** Jenis log yang layak tampil di riwayat singkat dashboard. */
+        private val NOTABLE_TYPES = setOf(
+            ActivityLogItem.LogType.SUSPICIOUS,
+            ActivityLogItem.LogType.PHISHING,
+            ActivityLogItem.LogType.CALL
+        )
+    }
+
     private lateinit var statusContainer: LinearLayout
     private lateinit var tvStatusTitle: TextView
     private lateinit var tvStatusDesc: TextView
@@ -52,7 +68,7 @@ class DashboardFragment : Fragment() {
                 }
 
                 // Update stats
-                if (type == ActivityLogItem.LogType.SAFE || type == ActivityLogItem.LogType.PHISHING) {
+                if (type in SCANNED_TYPES) {
                     scannedCount++
                     tvStatScanned.text = scannedCount.toString()
                 }
@@ -65,8 +81,8 @@ class DashboardFragment : Fragment() {
                     tvStatCalls.text = callCount.toString()
                 }
 
-                // Add to recent threats (only phishing and calls)
-                if (type == ActivityLogItem.LogType.PHISHING || type == ActivityLogItem.LogType.CALL) {
+                // Riwayat singkat: ancaman, temuan mencurigakan, dan panggilan
+                if (type in NOTABLE_TYPES) {
                     val item = ActivityLogItem(
                         message = message,
                         type = type,
@@ -117,7 +133,7 @@ class DashboardFragment : Fragment() {
         updateUI()
         val filter = IntentFilter("com.phishguard.ai.LOG_UPDATE")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            requireContext().registerReceiver(logReceiver, filter, Context.RECEIVER_EXPORTED)
+            requireContext().registerReceiver(logReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             requireContext().registerReceiver(logReceiver, filter)
         }
@@ -185,13 +201,9 @@ class DashboardFragment : Fragment() {
         tvStatBlocked.text = blockedCount.toString()
         tvStatCalls.text = callCount.toString()
         
-        // Show recent threats (top 5 phishing/calls)
+        // Riwayat singkat: 5 kejadian penting terakhir
         recentItems.clear()
-        recentItems.addAll(
-            parsedLogs.filter { 
-                it.type == ActivityLogItem.LogType.PHISHING || it.type == ActivityLogItem.LogType.CALL 
-            }.take(5)
-        )
+        recentItems.addAll(parsedLogs.filter { it.type in NOTABLE_TYPES }.take(5))
         
         recentAdapter.updateItems(recentItems)
         
