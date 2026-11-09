@@ -24,6 +24,14 @@
 
     <!-- Foreground Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!--
+        WAJIB sejak Android 14 untuk foreground service bertipe "microphone".
+        Tanpa ini startForeground() melempar SecurityException, dan karena
+        ProtectionFragment menyalakan ulang service tiap aplikasi dibuka,
+        aplikasi terkunci dalam lingkaran crash begitu Call Protection
+        pernah diaktifkan.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <application
         android:allowBackup="true"

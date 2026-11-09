@@ -588,6 +588,10 @@ JVM dan kelas heuristik memakainya untuk penelusuran.
   pemantauan.
 - **Analisis suara butuh jaringan** pada sebagian perangkat, karena
   `SpeechRecognizer` Android tidak selalu punya model luring bahasa Indonesia.
+- **Call Protection butuh izin mikrofon**, dan sejak Android 14 juga
+  `FOREGROUND_SERVICE_MICROPHONE` di manifest. Bila izinnya dicabut, toggle
+  dimatikan sendiri dengan pesan di log aktivitas — tidak lagi membuat
+  aplikasi gagal dibuka.
 - **Ambang belum tervalidasi lapangan** — lihat [Menyetel ambang
   deteksi](#menyetel-ambang-deteksi).
 - **Deteksi chat bergantung pada teks notifikasi**, bukan isi percakapan.

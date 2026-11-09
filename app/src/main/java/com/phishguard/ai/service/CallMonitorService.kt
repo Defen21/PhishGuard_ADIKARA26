@@ -1,18 +1,22 @@
 package com.phishguard.ai.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
 import android.telephony.PhoneStateListener
 import android.telephony.TelephonyManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.phishguard.ai.R
 import com.phishguard.ai.core.ai.CallFraudDetector
+import com.phishguard.ai.data.AppPreferences
 
 /**
  * ForegroundService untuk memantau panggilan telepon masuk.
@@ -78,12 +82,48 @@ class CallMonitorService : Service() {
         }
 
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
+
+        // Android 14+ menolak foreground service bertipe "microphone" bila
+        // izin mikrofon belum diberikan ATAU FOREGROUND_SERVICE_MICROPHONE
+        // tidak dideklarasikan. Dulu kegagalannya berupa SecurityException
+        // yang mematikan aplikasi — dan karena ProtectionFragment menyalakan
+        // ulang service ini tiap aplikasi dibuka, aplikasi jadi tidak bisa
+        // dibuka sama sekali. Sekarang gagal dengan tenang: matikan
+        // togglenya, beri tahu pengguna, lalu berhenti.
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.w(TAG, "Izin mikrofon belum diberikan — Call Protection dimatikan.")
+            disableAndStop("Call Protection butuh izin mikrofon.")
+            return
+        }
+
+        try {
+            startForeground(NOTIFICATION_ID, createNotification())
+        } catch (e: Exception) {
+            Log.e(TAG, "Gagal memulai foreground service", e)
+            disableAndStop("Call Protection tidak didukung di perangkat ini.")
+            return
+        }
 
         @Suppress("DEPRECATION")
         telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
 
         sendLogToUI("Call Protection service started.", "Phone", "SYSTEM")
+    }
+
+    /**
+     * Matikan preferensinya sebelum berhenti. Tanpa ini toggle tetap
+     * menyala dan service dicoba lagi setiap aplikasi dibuka.
+     */
+    private fun disableAndStop(alasan: String) {
+        try {
+            AppPreferences(this).callProtectionEnabled = false
+            sendLogToUI("⚠️ $alasan", "Phone", "SYSTEM")
+        } catch (e: Exception) {
+            Log.e(TAG, "disableAndStop error", e)
+        }
+        stopSelf()
     }
 
     override fun onDestroy() {

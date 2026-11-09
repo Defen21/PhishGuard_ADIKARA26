@@ -1,12 +1,15 @@
 package com.phishguard.ai.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.cardview.widget.CardView
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -16,6 +19,10 @@ import com.phishguard.ai.data.AppPreferences
 import com.google.android.material.switchmaterial.SwitchMaterial
 
 class ProtectionFragment : Fragment() {
+
+    private companion object {
+        const val REQ_MIKROFON = 2001
+    }
 
     private lateinit var prefs: AppPreferences
 
@@ -50,9 +57,17 @@ class ProtectionFragment : Fragment() {
         switchChrome.isChecked = prefs.monitorChrome
         switchCallProtection.isChecked = prefs.callProtectionEnabled
 
-        // Start service if enabled on startup
+        // Nyalakan lagi saat aplikasi dibuka — tapi hanya kalau izinnya
+        // masih ada. Tanpa penjagaan ini, toggle yang tersimpan menyala akan
+        // memulai service yang pasti gagal, dan aplikasi tidak bisa dibuka
+        // sama sekali.
         if (prefs.callProtectionEnabled) {
-            startCallService()
+            if (punyaIzinMikrofon()) {
+                startCallService()
+            } else {
+                prefs.callProtectionEnabled = false
+                switchCallProtection.isChecked = false
+            }
         }
 
         // Save on change
@@ -62,13 +77,40 @@ class ProtectionFragment : Fragment() {
         switchInstagram.setOnCheckedChangeListener { _, checked -> prefs.monitorInstagram = checked }
         switchChrome.setOnCheckedChangeListener { _, checked -> prefs.monitorChrome = checked }
         
-        switchCallProtection.setOnCheckedChangeListener { _, checked ->
-            prefs.callProtectionEnabled = checked
-            if (checked) {
-                startCallService()
-            } else {
-                stopCallService()
+        switchCallProtection.setOnCheckedChangeListener { view, checked ->
+            if (checked && !punyaIzinMikrofon()) {
+                // Android 14+ menolak foreground service mikrofon tanpa izin
+                // ini, dan penolakannya berupa crash. Minta izinnya dulu;
+                // togglenya baru boleh menyala setelah diberikan.
+                view.isChecked = false
+                prefs.callProtectionEnabled = false
+                mintaIzinMikrofon()
+                return@setOnCheckedChangeListener
             }
+            prefs.callProtectionEnabled = checked
+            if (checked) startCallService() else stopCallService()
+        }
+    }
+
+    private fun punyaIzinMikrofon(): Boolean =
+        ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+
+    private fun mintaIzinMikrofon() {
+        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIKROFON)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_MIKROFON) return
+        val diberikan = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+        view?.findViewById<SwitchMaterial>(R.id.switchCallProtection)?.isChecked = diberikan
+        if (diberikan) {
+            prefs.callProtectionEnabled = true
+            startCallService()
         }
     }
 
